@@ -24,27 +24,19 @@ func main() {
 		}
 	}
 
-	port := *portFlag
-	if port == 0 {
-		p, err := findFreePort()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: could not find a free port: %v\n", err)
-			os.Exit(1)
-		}
-		port = p
-	}
-
-	fmt.Printf("Listening on http://127.0.0.1:%d\n", port)
-	server.Start(root, port, staticFiles)
-}
-
-// findFreePort asks the OS for an available TCP port on 127.0.0.1.
-func findFreePort() (int, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	addr := fmt.Sprintf("127.0.0.1:%d", *portFlag)
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		return 0, err
+		fmt.Fprintf(os.Stderr, "error: could not bind port: %v\n", err)
+		os.Exit(1)
 	}
+
+	// Print the URL only after the listener is successfully bound.
 	port := ln.Addr().(*net.TCPAddr).Port
-	ln.Close()
-	return port, nil
+	fmt.Printf("Listening on http://127.0.0.1:%d\n", port)
+
+	if err := server.Start(root, ln, staticFiles); err != nil {
+		fmt.Fprintf(os.Stderr, "error: server exited: %v\n", err)
+		os.Exit(1)
+	}
 }

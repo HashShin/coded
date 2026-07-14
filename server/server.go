@@ -8,16 +8,19 @@ import (
 	"net/http"
 )
 
-// Start binds an HTTP server to 127.0.0.1:port and begins serving.
-// root is the working directory for the editor (reserved for future use).
+// Start serves the editor using an already-open listener.
+// root is the working directory for the editor (used by API handlers registered in later tasks).
 // assets is an embedded FS rooted at the "static" directory.
-func Start(root string, port int, assets embed.FS) {
+// The caller is responsible for printing the listening address after Start returns successfully.
+func Start(root string, ln net.Listener, assets embed.FS) error {
+	// root is used by API handlers (registered in later tasks)
+
 	mux := http.NewServeMux()
 
 	// Sub-FS rooted at "static/" so paths like "index.html" work directly.
 	staticFS, err := fs.Sub(assets, "static")
 	if err != nil {
-		panic(fmt.Sprintf("server: failed to create sub-FS: %v", err))
+		return fmt.Errorf("server: failed to create sub-FS: %w", err)
 	}
 	fileServer := http.FileServer(http.FS(staticFS))
 
@@ -35,8 +38,8 @@ func Start(root string, port int, assets embed.FS) {
 			path = path[1:]
 		}
 
-		_, err := staticFS.Open(path)
-		if err != nil {
+		// Use fs.Stat to check existence without leaking an open file handle.
+		if _, err := fs.Stat(staticFS, path); err != nil {
 			// File not found — serve index.html for SPA client-side routing.
 			r2 := r.Clone(r.Context())
 			r2.URL.Path = "/"
@@ -47,18 +50,12 @@ func Start(root string, port int, assets embed.FS) {
 		fileServer.ServeHTTP(w, r)
 	})
 
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	srv := &http.Server{
-		Addr:    addr,
 		Handler: mux,
 	}
 
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		panic(fmt.Sprintf("server: listen %s: %v", addr, err))
-	}
-
 	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
-		panic(fmt.Sprintf("server: serve: %v", err))
+		return fmt.Errorf("server: serve: %w", err)
 	}
+	return nil
 }
