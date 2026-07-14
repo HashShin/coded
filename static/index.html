@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Web Editor</title>
+  <title>Coded</title>
   <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
@@ -35,6 +35,7 @@
         <!-- Tab bar + toolbar -->
         <div id="tab-bar">
           <div id="toolbar">
+            <span id="app-name">Coded</span>
             <button id="btn-wrap" class="toolbar-btn active" title="Toggle word wrap (Alt+Z)">Wrap</button>
           </div>
         </div>
@@ -54,7 +55,10 @@
 
         <!-- Editor pane -->
         <div id="editor-pane">
-          <div id="welcome">Open a file from the sidebar</div>
+          <div id="welcome">
+            <span class="welcome-title">Coded</span>
+            <span>Open a file from the sidebar</span>
+          </div>
           <div id="editor-container" style="display:none; height:100%;"></div>
         </div>
 
@@ -64,6 +68,8 @@
     <!-- Status bar -->
     <div id="status-bar">
       <span id="status-path"></span>
+      <span id="status-cursor"></span>
+      <span id="status-lang"></span>
     </div>
 
   </div><!-- /app -->

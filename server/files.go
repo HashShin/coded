@@ -26,7 +26,14 @@ func writeJSONError(w http.ResponseWriter, msg string, code int) {
 
 // resolveWithinRoot safely joins root and relPath, then verifies the result
 // stays within root. Returns an absolute path or an error if the path escapes.
+// Absolute relPaths are explicitly rejected to prevent callers from bypassing
+// the root constraint via filepath.Join's path-cleaning behaviour.
 func resolveWithinRoot(root, relPath string) (string, error) {
+	// Reject any relPath that is itself absolute — filepath.Join would silently
+	// strip the leading slash and treat it as relative, which is misleading.
+	if filepath.IsAbs(relPath) {
+		return "", os.ErrPermission
+	}
 	joined := filepath.Join(root, relPath)
 	abs, err := filepath.Abs(joined)
 	if err != nil {
