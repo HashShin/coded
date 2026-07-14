@@ -186,7 +186,7 @@ html, body {
 .tok-op   { color: #d4d4d4; }
 
 /* ── Inner editor div ── */
-#editor-inner {
+.editor-inner {
   outline: none;
   min-height: 100%;
   white-space: pre-wrap;
@@ -200,7 +200,7 @@ html, body {
   color: #d4d4d4;
 }
 
-#editor-inner div { min-height: 1.5em; }
+.editor-inner div { min-height: 1.5em; }
 
 #file-content {
   margin: 0;

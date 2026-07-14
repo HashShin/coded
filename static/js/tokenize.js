@@ -4,15 +4,6 @@
 // Exports a single function: tokenize(text, lang) → [{type, text}, ...]
 // Token types: kw, str, num, cmt, fn, type, op, plain
 
-/**
- * Escape text for safe HTML insertion.
- * @param {string} s
- * @returns {string}
- */
-function escHtml(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
 // ── Helper: regex-based tokenizer builder ─────────────────────────────────────
 
 /**

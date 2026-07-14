@@ -48,16 +48,25 @@ function nodeOffsetToChar(root, targetNode, targetOffset) {
   // Case 2: element node (browser placed caret at child index targetOffset).
   // Count all text characters before the child at targetOffset inside targetNode.
   if (targetNode && targetNode.nodeType === Node.ELEMENT_NODE) {
-    // First, count all text characters in the document that come before targetNode.
+    // Special case: caret is between line-divs directly inside the editor root.
+    // childOffset === N means the caret is at the start of line N (0-based).
+    // Return sum of lengths of lines 0..N-1 plus N newline characters.
+    if (targetNode === root) {
+      const lines = getPlainText(root).split('\n');
+      let count = 0;
+      for (let i = 0; i < targetOffset && i < lines.length; i++) {
+        count += lines[i].length + 1; // +1 for the '\n' between lines
+      }
+      return count;
+    }
+
+    // General element case: count text before targetNode in the document,
+    // then add characters of children[0..targetOffset-1] inside targetNode.
     const walker = textWalker(root);
     let count = 0;
     let node;
-    // Sum everything inside targetNode's preceding siblings and ancestors.
-    // Easiest: count all text before the first text node inside targetNode,
-    // then add characters of children[0..targetOffset-1] inside targetNode.
     let insideTarget = false;
     let childCharCount = 0;
-    let childsSeen = 0;
 
     while ((node = walker.nextNode()) !== null) {
       if (targetNode.contains(node)) {
@@ -331,7 +340,7 @@ class EditorInstance {
     inner.spellcheck = false;
     inner.setAttribute('autocorrect', 'off');
     inner.setAttribute('autocapitalize', 'off');
-    inner.id = 'editor-inner';
+    inner.className = 'editor-inner';
     containerEl.appendChild(inner);
     this._inner = inner;
 
@@ -409,6 +418,17 @@ class EditorInstance {
     // Restore caret.
     if (caret !== null) {
       setCaretOffset(this._inner, caret.anchor, caret.focus);
+    }
+  }
+
+  /**
+   * Remove event listeners and detach the inner element from the DOM.
+   */
+  destroy() {
+    this._inner.removeEventListener('input', this._onInput);
+    this._inner.removeEventListener('keydown', this._onKeydown);
+    if (this._inner.parentNode) {
+      this._inner.parentNode.removeChild(this._inner);
     }
   }
 
