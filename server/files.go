@@ -308,10 +308,15 @@ func handleFiles(root string) http.HandlerFunc {
 			if err != nil {
 				return nil // skip unreadable entries
 			}
+			name := d.Name()
 			if d.IsDir() {
-				if skipDirs[d.Name()] {
+				if skipDirs[name] || strings.HasPrefix(name, ".") {
 					return filepath.SkipDir
 				}
+				return nil
+			}
+			// Skip dotfiles.
+			if strings.HasPrefix(name, ".") {
 				return nil
 			}
 			if len(files) >= maxFiles {
