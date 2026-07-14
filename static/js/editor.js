@@ -376,6 +376,24 @@ class EditorInstance {
   }
 
   /**
+   * Get the current caret position as {anchor, focus} character offsets.
+   * Returns null if the selection is not inside the editor.
+   * @returns {{anchor:number, focus:number}|null}
+   */
+  getCaretOffset() {
+    return getCaretOffset(this._inner);
+  }
+
+  /**
+   * Set the caret to the given character offsets.
+   * @param {number} anchor
+   * @param {number} focus
+   */
+  setCaretOffset(anchor, focus) {
+    setCaretOffset(this._inner, anchor, focus);
+  }
+
+  /**
    * Change the language and re-highlight without changing content.
    * @param {string} lang
    */

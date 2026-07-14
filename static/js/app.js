@@ -11,6 +11,9 @@ let activeTab = null;
 /** The Editor instance (created on DOMContentLoaded). */
 let editor = null;
 
+/** Autosave debounce timer handle. */
+let _saveSessionTimer = null;
+
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 
 const fileTree       = document.getElementById('file-tree');
@@ -204,6 +207,8 @@ function activateTab(filePath) {
   // Show content in editor.
   const file = openFiles.get(filePath);
   showContent(filePath, file ? file.content : '');
+
+  scheduleSaveSession();
 }
 
 /**
@@ -338,6 +343,7 @@ function closeTab(filePath) {
       activateTab(next.dataset.path);
     } else {
       showWelcome();
+      scheduleSaveSession();
     }
   }
 }
@@ -402,6 +408,68 @@ async function openFile(filePath, treeRow) {
   }
 }
 
+// ── Session persistence ───────────────────────────────────────────────────────
+
+/**
+ * Persist the current session (open tabs + caret) to the server.
+ */
+function saveSession() {
+  const tabs = [];
+  for (const [path, file] of openFiles) {
+    tabs.push({ path, content: file.content, savedContent: file.savedContent, dirty: file.dirty });
+  }
+  const caretPositions = {};
+  if (activeTab) {
+    const pos = editor.getCaretOffset();
+    if (pos) caretPositions[activeTab] = pos;
+  }
+  const session = { openTabs: tabs, activeTab, caretPositions };
+  fetch('/api/session', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(session),
+  }).catch(err => console.error('session save failed:', err));
+}
+
+/**
+ * Schedule a saveSession after a 2-second debounce.
+ */
+function scheduleSaveSession() {
+  if (_saveSessionTimer !== null) clearTimeout(_saveSessionTimer);
+  _saveSessionTimer = setTimeout(() => {
+    _saveSessionTimer = null;
+    saveSession();
+  }, 2000);
+}
+
+/**
+ * Load the persisted session from the server and restore open tabs.
+ * Returns true if tabs were restored, false if nothing to restore.
+ * @returns {Promise<boolean>}
+ */
+async function loadSession() {
+  try {
+    const res = await fetch('/api/session');
+    const session = await res.json();
+    if (!session.openTabs || session.openTabs.length === 0) return false;
+    for (const tab of session.openTabs) {
+      openFiles.set(tab.path, { content: tab.content, savedContent: tab.savedContent, dirty: tab.dirty });
+      // Add the tab element to the tab bar (without activating).
+      const tabEl = createTab(tab.path);
+      tabBar.appendChild(tabEl);
+    }
+    const toActivate = session.activeTab || session.openTabs[0].path;
+    activateTab(toActivate);
+    if (session.caretPositions && session.caretPositions[toActivate]) {
+      const { anchor, focus } = session.caretPositions[toActivate];
+      setTimeout(() => editor.setCaretOffset(anchor, focus), 50);
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 function init() {
@@ -410,7 +478,12 @@ function init() {
 
   // Wire up dirty-state tracking on every editor change.
   editor.onchange = (text) => {
-    if (activeTab) updateDirtyState(activeTab, text);
+    if (activeTab) {
+      updateDirtyState(activeTab, text);
+      // Keep in-memory content current for session saves.
+      openFiles.get(activeTab).content = text;
+      scheduleSaveSession();
+    }
   };
 
   // Ctrl+S / Cmd+S to save.
@@ -421,8 +494,12 @@ function init() {
     }
   });
 
-  showWelcome();
   loadRootTree();
+
+  // Restore previous session; fall back to welcome screen.
+  loadSession().then(restored => {
+    if (!restored) showWelcome();
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);

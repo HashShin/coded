@@ -28,6 +28,7 @@ func Start(root string, ln net.Listener, assets embed.FS) error {
 	mux.HandleFunc("/api/tree", handleTree(root))
 	mux.HandleFunc("/api/file", handleFile(root))
 	mux.HandleFunc("/api/files", handleFilesStub())
+	mux.HandleFunc("/api/session", handleSession(root))
 
 	// All other routes: try to serve a static file; fall back to index.html (SPA).
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
