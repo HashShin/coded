@@ -176,6 +176,32 @@ html, body {
   background: #424242;
 }
 
+/* ── Token colours (syntax highlighting) ── */
+.tok-kw   { color: #569cd6; }
+.tok-str  { color: #ce9178; }
+.tok-num  { color: #b5cea8; }
+.tok-cmt  { color: #6a9955; font-style: italic; }
+.tok-fn   { color: #dcdcaa; }
+.tok-type { color: #4ec9b0; }
+.tok-op   { color: #d4d4d4; }
+
+/* ── Inner editor div ── */
+#editor-inner {
+  outline: none;
+  min-height: 100%;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 8px 8px 8px 48px;
+  tab-size: 2;
+  -moz-tab-size: 2;
+  color: #d4d4d4;
+}
+
+#editor-inner div { min-height: 1.5em; }
+
 #file-content {
   margin: 0;
   padding: 12px 16px;

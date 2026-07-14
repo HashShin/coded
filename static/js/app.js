@@ -8,14 +8,44 @@ const openFiles = new Map();
 /** Currently active tab path, or null. */
 let activeTab = null;
 
+/** The Editor instance (created on DOMContentLoaded). */
+let editor = null;
+
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 
-const fileTree  = document.getElementById('file-tree');
-const tabBar    = document.getElementById('tab-bar');
-const editorPane = document.getElementById('editor-pane');
-const fileContent = document.getElementById('file-content');
-const welcome   = document.getElementById('welcome');
-const statusPath = document.getElementById('status-path');
+const fileTree       = document.getElementById('file-tree');
+const tabBar         = document.getElementById('tab-bar');
+const editorPane     = document.getElementById('editor-pane');
+const editorContainer = document.getElementById('editor-container');
+const welcome        = document.getElementById('welcome');
+const statusPath     = document.getElementById('status-path');
+
+// ── Language detection ────────────────────────────────────────────────────────
+
+/**
+ * Map a file path's extension to a language string for the tokenizer.
+ * @param {string} filePath
+ * @returns {string}
+ */
+function langFromPath(filePath) {
+  const ext = filePath.split('.').pop().toLowerCase();
+  const map = {
+    go:   'go',
+    js:   'js',
+    ts:   'ts',
+    jsx:  'jsx',
+    tsx:  'tsx',
+    py:   'py',
+    json: 'json',
+    html: 'html',
+    htm:  'html',
+    css:  'css',
+    md:   'md',
+    sh:   'sh',
+    bash: 'bash',
+  };
+  return map[ext] || 'plain';
+}
 
 // ── Tree ─────────────────────────────────────────────────────────────────────
 
@@ -127,10 +157,26 @@ async function loadRootTree() {
 // ── Tabs ─────────────────────────────────────────────────────────────────────
 
 /**
+ * Save the current editor content back into openFiles for the active tab.
+ * Call this before switching away from a tab.
+ */
+function saveActiveTabContent() {
+  if (activeTab && editor) {
+    const file = openFiles.get(activeTab);
+    if (file) {
+      file.content = editor.getValue();
+    }
+  }
+}
+
+/**
  * Create or activate a tab for the given path.
  * @param {string} filePath
  */
 function activateTab(filePath) {
+  // Save content of current tab before leaving it.
+  saveActiveTabContent();
+
   // Deactivate current.
   if (activeTab) {
     const prev = tabBar.querySelector('.tab[data-path="' + CSS.escape(activeTab) + '"]');
@@ -155,7 +201,7 @@ function activateTab(filePath) {
   const treeItem = fileTree.querySelector('.tree-item[data-path="' + CSS.escape(filePath) + '"]');
   if (treeItem) treeItem.classList.add('active');
 
-  // Show content.
+  // Show content in editor.
   const file = openFiles.get(filePath);
   showContent(filePath, file ? file.content : '');
 }
@@ -198,6 +244,11 @@ function createTab(filePath) {
  * @param {string} filePath
  */
 function closeTab(filePath) {
+  // Save content before closing, in case we switch to another tab.
+  if (activeTab === filePath) {
+    saveActiveTabContent();
+  }
+
   openFiles.delete(filePath);
 
   const tab = tabBar.querySelector('.tab[data-path="' + CSS.escape(filePath) + '"]');
@@ -227,15 +278,22 @@ function closeTab(filePath) {
 
 // ── Content display ───────────────────────────────────────────────────────────
 
+/**
+ * Show file content in the editor.
+ * @param {string} filePath
+ * @param {string} content
+ */
 function showContent(filePath, content) {
   welcome.style.display = 'none';
-  fileContent.style.display = 'block';
-  fileContent.textContent = content;
+  editorContainer.style.display = 'block';
   statusPath.textContent = filePath;
+
+  const lang = langFromPath(filePath);
+  editor.setValue(content, lang);
 }
 
 function showWelcome() {
-  fileContent.style.display = 'none';
+  editorContainer.style.display = 'none';
   welcome.style.display = 'flex';
   statusPath.textContent = '';
 }
@@ -281,6 +339,9 @@ async function openFile(filePath, treeRow) {
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 function init() {
+  // Initialize the editor in the container div.
+  editor = Editor.init(editorContainer);
+
   showWelcome();
   loadRootTree();
 }
