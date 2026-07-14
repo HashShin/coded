@@ -2,12 +2,24 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 )
+
+// writeJSONError writes a JSON error response with the correct Content-Type.
+// Use this instead of http.Error for JSON API endpoints, because http.Error
+// always sets Content-Type to text/plain which breaks frontend res.json() calls.
+func writeJSONError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(code)
+	fmt.Fprintf(w, `{"error":%q}`, msg)
+}
 
 // resolveWithinRoot safely joins root and relPath, then verifies the result
 // stays within root. Returns an absolute path or an error if the path escapes.
@@ -43,16 +55,16 @@ func handleTree(root string) http.HandlerFunc {
 
 		abs, err := resolveWithinRoot(root, relPath)
 		if err != nil {
-			http.Error(w, `{"error":"bad path"}`, http.StatusBadRequest)
+			writeJSONError(w, "bad path", http.StatusBadRequest)
 			return
 		}
 
 		entries, err := os.ReadDir(abs)
 		if err != nil {
 			if os.IsNotExist(err) {
-				http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+				writeJSONError(w, "not found", http.StatusNotFound)
 			} else {
-				http.Error(w, `{"error":"read error"}`, http.StatusInternalServerError)
+				writeJSONError(w, "read error", http.StatusInternalServerError)
 			}
 			return
 		}
@@ -91,7 +103,9 @@ func handleTree(root string) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(result)
+		if err := json.NewEncoder(w).Encode(result); err != nil {
+			log.Printf("json encode error: %v", err)
+		}
 	}
 }
 
@@ -105,58 +119,61 @@ func handleFile(root string) http.HandlerFunc {
 
 		relPath := r.URL.Query().Get("path")
 		if relPath == "" {
-			http.Error(w, `{"error":"path required"}`, http.StatusBadRequest)
+			writeJSONError(w, "path required", http.StatusBadRequest)
 			return
 		}
 
 		abs, err := resolveWithinRoot(root, relPath)
 		if err != nil {
-			http.Error(w, `{"error":"bad path"}`, http.StatusBadRequest)
+			writeJSONError(w, "bad path", http.StatusBadRequest)
 			return
 		}
 
 		info, err := os.Stat(abs)
 		if err != nil {
 			if os.IsNotExist(err) {
-				http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+				writeJSONError(w, "not found", http.StatusNotFound)
 			} else {
-				http.Error(w, `{"error":"stat error"}`, http.StatusInternalServerError)
+				writeJSONError(w, "stat error", http.StatusInternalServerError)
 			}
 			return
 		}
 
 		if info.IsDir() {
-			http.Error(w, `{"error":"is a directory"}`, http.StatusBadRequest)
+			writeJSONError(w, "is a directory", http.StatusBadRequest)
 			return
 		}
 
 		const maxSize = 10 * 1024 * 1024 // 10 MB
 		if info.Size() > maxSize {
-			http.Error(w, `{"error":"file too large"}`, http.StatusRequestEntityTooLarge)
+			writeJSONError(w, "file too large", http.StatusRequestEntityTooLarge)
 			return
 		}
 
 		f, err := os.Open(abs)
 		if err != nil {
-			http.Error(w, `{"error":"open error"}`, http.StatusInternalServerError)
+			writeJSONError(w, "open error", http.StatusInternalServerError)
 			return
 		}
 		defer f.Close()
 
 		// Read first 512 bytes to detect binary content.
 		var sniff [512]byte
-		n, _ := f.Read(sniff[:])
+		n, readErr := f.Read(sniff[:])
+		if readErr != nil && readErr != io.EOF {
+			writeJSONError(w, "internal error", http.StatusInternalServerError)
+			return
+		}
 		for i := 0; i < n; i++ {
 			if sniff[i] == 0 {
-				w.Header().Set("Content-Type", "application/json")
-				http.Error(w, `{"error":"binary file"}`, http.StatusUnsupportedMediaType)
+				writeJSONError(w, "binary file", http.StatusUnsupportedMediaType)
 				return
 			}
 		}
 
 		// Seek back and serve the full file.
 		if _, err := f.Seek(0, 0); err != nil {
-			http.Error(w, `{"error":"seek error"}`, http.StatusInternalServerError)
+			writeJSONError(w, "seek error", http.StatusInternalServerError)
 			return
 		}
 
@@ -177,6 +194,6 @@ func handleFile(root string) http.HandlerFunc {
 // handleFilesStub serves GET /api/files — stubbed for Task 9.
 func handleFilesStub() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, `{"error":"not implemented"}`, http.StatusNotImplemented)
+		writeJSONError(w, "not implemented", http.StatusNotImplemented)
 	}
 }
