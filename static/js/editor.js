@@ -323,6 +323,52 @@ function getPlainText(editorEl) {
   return result;
 }
 
+// ── Bracket matching helpers ──────────────────────────────────────────────────
+
+const BRACKET_PAIRS = { '(': ')', '[': ']', '{': '}', '<': '>' };
+const BRACKET_CLOSE = { ')': '(', ']': '[', '}': '{', '>': '<' };
+const ALL_BRACKETS = new Set(['(', ')', '[', ']', '{', '}', '<', '>']);
+
+/**
+ * Given a string and the position of an opening bracket, find its matching
+ * closing bracket position. Returns -1 if not found.
+ * @param {string} text
+ * @param {number} pos   position of the opening bracket
+ * @returns {number}
+ */
+function findMatchingClose(text, pos) {
+  const open = text[pos];
+  const close = BRACKET_PAIRS[open];
+  if (!close) return -1;
+  let depth = 0;
+  for (let i = pos; i < text.length; i++) {
+    if (text[i] === open)  depth++;
+    if (text[i] === close) depth--;
+    if (depth === 0) return i;
+  }
+  return -1;
+}
+
+/**
+ * Given a string and the position of a closing bracket, find its matching
+ * opening bracket position. Returns -1 if not found.
+ * @param {string} text
+ * @param {number} pos   position of the closing bracket
+ * @returns {number}
+ */
+function findMatchingOpen(text, pos) {
+  const close = text[pos];
+  const open  = BRACKET_CLOSE[close];
+  if (!open) return -1;
+  let depth = 0;
+  for (let i = pos; i >= 0; i--) {
+    if (text[i] === close) depth++;
+    if (text[i] === open)  depth--;
+    if (depth === 0) return i;
+  }
+  return -1;
+}
+
 // ── Editor class ──────────────────────────────────────────────────────────────
 
 class EditorInstance {
@@ -333,6 +379,25 @@ class EditorInstance {
     this._container = containerEl;
     this._lang = 'plain';
     this._lastText = null; // Track last rendered text to skip no-op re-renders.
+    this._wrapEnabled = true; // Word-wrap state.
+    this._bracketMatchSpans = []; // Currently highlighted bracket spans.
+
+    // Build the editor layout:
+    //   #editor-wrap (flex row)
+    //     #line-numbers
+    //     .editor-inner (contenteditable)
+
+    // Wrap div (flex row container).
+    const wrap = document.createElement('div');
+    wrap.id = 'editor-wrap';
+    containerEl.appendChild(wrap);
+    this._wrap = wrap;
+
+    // Line number gutter.
+    const gutter = document.createElement('div');
+    gutter.id = 'line-numbers';
+    wrap.appendChild(gutter);
+    this._gutter = gutter;
 
     // Create the inner editable div.
     const inner = document.createElement('div');
@@ -341,14 +406,19 @@ class EditorInstance {
     inner.setAttribute('autocorrect', 'off');
     inner.setAttribute('autocapitalize', 'off');
     inner.className = 'editor-inner';
-    containerEl.appendChild(inner);
+    wrap.appendChild(inner);
     this._inner = inner;
 
     // Bind event handlers.
-    this._onInput = this._onInput.bind(this);
-    this._onKeydown = this._onKeydown.bind(this);
-    inner.addEventListener('input', this._onInput);
+    this._onInput    = this._onInput.bind(this);
+    this._onKeydown  = this._onKeydown.bind(this);
+    this._onSelChange = this._onSelChange.bind(this);
+    this._onScroll   = this._onScroll.bind(this);
+
+    inner.addEventListener('input',   this._onInput);
     inner.addEventListener('keydown', this._onKeydown);
+    inner.addEventListener('scroll',  this._onScroll);
+    document.addEventListener('selectionchange', this._onSelChange);
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -405,7 +475,33 @@ class EditorInstance {
     if (caret) setCaretOffset(this._inner, caret.anchor, caret.focus);
   }
 
+  /**
+   * Toggle word-wrap on/off.
+   */
+  toggleWrap() {
+    this._wrapEnabled = !this._wrapEnabled;
+    this._applyWrap();
+    // Update button label if present.
+    const btn = document.getElementById('btn-wrap');
+    if (btn) btn.classList.toggle('active', this._wrapEnabled);
+  }
+
   // ── Private ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Apply current wrap setting to the inner editor element.
+   */
+  _applyWrap() {
+    if (this._wrapEnabled) {
+      this._inner.style.whiteSpace = 'pre-wrap';
+      this._inner.style.wordBreak  = 'break-all';
+      this._inner.style.overflowX  = '';
+    } else {
+      this._inner.style.whiteSpace = 'pre';
+      this._inner.style.wordBreak  = '';
+      this._inner.style.overflowX  = 'auto';
+    }
+  }
 
   /**
    * Render text with syntax highlighting into the editor.
@@ -415,6 +511,27 @@ class EditorInstance {
     const tokens = window.tokenize(text, this._lang);
     const html   = tokensToHtml(tokens);
     this._inner.innerHTML = html;
+    this._updateLineNumbers(text);
+  }
+
+  /**
+   * Update the line number gutter to match the current text.
+   * @param {string} text
+   */
+  _updateLineNumbers(text) {
+    const lineCount = text === '' ? 1 : text.split('\n').length;
+    let html = '';
+    for (let i = 1; i <= lineCount; i++) {
+      html += '<div>' + i + '</div>';
+    }
+    this._gutter.innerHTML = html;
+  }
+
+  /**
+   * Sync gutter scroll position to match the editor.
+   */
+  _onScroll() {
+    this._gutter.scrollTop = this._inner.scrollTop;
   }
 
   /**
@@ -448,41 +565,244 @@ class EditorInstance {
    * Remove event listeners and detach the inner element from the DOM.
    */
   destroy() {
-    this._inner.removeEventListener('input', this._onInput);
+    this._inner.removeEventListener('input',   this._onInput);
     this._inner.removeEventListener('keydown', this._onKeydown);
-    if (this._inner.parentNode) {
-      this._inner.parentNode.removeChild(this._inner);
+    this._inner.removeEventListener('scroll',  this._onScroll);
+    document.removeEventListener('selectionchange', this._onSelChange);
+    if (this._wrap.parentNode) {
+      this._wrap.parentNode.removeChild(this._wrap);
     }
   }
 
   /**
+   * Insert text at the current caret position (replacing any selection).
+   * @param {string} text
+   */
+  _insertAtCaret(text) {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    const node = document.createTextNode(text);
+    range.insertNode(node);
+    range.setStartAfter(node);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  /**
    * Handle keydown events.
-   * - Tab: insert 2 spaces instead of moving focus.
+   * - Tab:   insert 2 spaces.
+   * - Enter: auto-indent.
+   * - Auto-close pairs: (, [, {, ", '
+   * - Alt+Z: toggle word-wrap.
    */
   _onKeydown(e) {
+    // ── Alt+Z: word-wrap toggle ──────────────────────────────────────────────
+    if (e.altKey && e.key === 'z') {
+      e.preventDefault();
+      this.toggleWrap();
+      return;
+    }
+
+    // ── Tab: insert 2 spaces ─────────────────────────────────────────────────
     if (e.key === 'Tab') {
       e.preventDefault();
 
-      // Insert 2 spaces at cursor position using Selection API.
       const sel = window.getSelection();
       if (!sel || sel.rangeCount === 0) return;
 
       const range = sel.getRangeAt(0);
-      // Delete selected content first.
       range.deleteContents();
 
-      // Insert a text node with 2 spaces.
       const spaces = document.createTextNode('  ');
       range.insertNode(spaces);
 
-      // Move caret after the inserted spaces.
       range.setStartAfter(spaces);
       range.collapse(true);
       sel.removeAllRanges();
       sel.addRange(range);
 
-      // Trigger re-render.
       this._onInput();
+      return;
+    }
+
+    // ── Auto-close pairs ─────────────────────────────────────────────────────
+    const AUTO_PAIRS = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'" };
+    if (AUTO_PAIRS.hasOwnProperty(e.key)) {
+      const text     = this.getValue();
+      const caretPos = getCaretOffset(this._inner);
+      if (caretPos !== null) {
+        const pos      = caretPos.focus;
+        const nextChar = text[pos] || '';
+        const prevChar = pos > 0 ? text[pos - 1] : '';
+
+        // Smart: don't auto-close if next char is not whitespace/EOL.
+        const nextIsWsOrEnd = nextChar === '' || /[\s\n\r]/.test(nextChar)
+                           || nextChar === ')' || nextChar === ']'
+                           || nextChar === '}' || nextChar === '"'
+                           || nextChar === "'";
+
+        // For quotes: don't auto-close if previous char is the same quote.
+        const isQuote    = e.key === '"' || e.key === "'";
+        const prevIsSame = prevChar === e.key;
+
+        if (nextIsWsOrEnd && !(isQuote && prevIsSame)) {
+          e.preventDefault();
+          const closing = AUTO_PAIRS[e.key];
+          this._insertAtCaret(e.key + closing);
+          // Move caret back one position (between the pair).
+          const newCaret = getCaretOffset(this._inner);
+          if (newCaret !== null) {
+            setCaretOffset(this._inner, newCaret.focus - 1, newCaret.focus - 1);
+          }
+          this._onInput();
+          return;
+        }
+      }
+    }
+
+    // ── Enter: auto-indent ───────────────────────────────────────────────────
+    if (e.key === 'Enter') {
+      e.preventDefault();
+
+      const text     = this.getValue();
+      const caretPos = getCaretOffset(this._inner);
+      if (caretPos === null) return;
+
+      const pos = Math.min(caretPos.anchor, caretPos.focus);
+
+      // Find the start of the current line.
+      let lineStart = text.lastIndexOf('\n', pos - 1);
+      lineStart = lineStart === -1 ? 0 : lineStart + 1;
+
+      // Find the end of the current line.
+      let lineEnd = text.indexOf('\n', pos);
+      if (lineEnd === -1) lineEnd = text.length;
+
+      const currentLine = text.slice(lineStart, lineEnd);
+
+      // Extract leading whitespace.
+      const leadingWs = currentLine.match(/^(\s*)/)[1];
+
+      // Check if line ends (up to caret) with an indent-triggering character.
+      const beforeCaret = text.slice(lineStart, pos).trimEnd();
+      const lastChar    = beforeCaret[beforeCaret.length - 1] || '';
+      const extraIndent = (lastChar === '{' || lastChar === '(' ||
+                           lastChar === '[' || lastChar === ':')
+                        ? '  ' : '';
+
+      const indent = leadingWs + extraIndent;
+
+      // Delete any selection, then insert newline + indent.
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const node = document.createTextNode('\n' + indent);
+      range.insertNode(node);
+      range.setStartAfter(node);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+
+      this._onInput();
+      return;
+    }
+  }
+
+  // ── Bracket match highlight ─────────────────────────────────────────────────
+
+  /**
+   * Clear any existing bracket-match highlights.
+   */
+  _clearBracketMatch() {
+    for (const span of this._bracketMatchSpans) {
+      span.classList.remove('tok-bracket-match');
+    }
+    this._bracketMatchSpans = [];
+  }
+
+  /**
+   * Given a character offset into the plain text, find the DOM span (or text
+   * node's parent) at that position and add the bracket-match class.
+   * @param {string} text   full plain text
+   * @param {number} charOff  character offset of the bracket
+   */
+  _highlightBracketAt(text, charOff) {
+    // Walk text nodes to find the one containing charOff.
+    const walker = textWalker(this._inner);
+    let count = 0;
+    let node;
+    while ((node = walker.nextNode()) !== null) {
+      const len = node.nodeValue.length;
+      if (count + len > charOff) {
+        // This text node contains our character.
+        // The span to highlight is this node's closest element ancestor inside _inner.
+        let el = node.parentNode;
+        while (el && el !== this._inner && el.parentNode !== this._inner) {
+          el = el.parentNode;
+        }
+        if (el && el !== this._inner) {
+          el.classList.add('tok-bracket-match');
+          this._bracketMatchSpans.push(el);
+        }
+        return;
+      }
+      count += len;
+    }
+  }
+
+  /**
+   * Handle selection change: update bracket match highlights.
+   */
+  _onSelChange() {
+    this._clearBracketMatch();
+
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (!this._inner.contains(range.commonAncestorContainer)) return;
+
+    const text  = this.getValue();
+    const caret = getCaretOffset(this._inner);
+    if (!caret) return;
+
+    const pos = caret.focus;
+
+    // Check character just before caret (pos-1) and at caret (pos).
+    const charBefore = pos > 0 ? text[pos - 1] : '';
+    const charAt     = text[pos] || '';
+
+    let bracketPos   = -1;
+    let matchPos     = -1;
+
+    if (ALL_BRACKETS.has(charBefore)) {
+      const ch = charBefore;
+      if (BRACKET_PAIRS[ch]) {
+        // Opening bracket before caret.
+        bracketPos = pos - 1;
+        matchPos   = findMatchingClose(text, bracketPos);
+      } else if (BRACKET_CLOSE[ch]) {
+        // Closing bracket before caret.
+        bracketPos = pos - 1;
+        matchPos   = findMatchingOpen(text, bracketPos);
+      }
+    } else if (ALL_BRACKETS.has(charAt)) {
+      const ch = charAt;
+      if (BRACKET_PAIRS[ch]) {
+        bracketPos = pos;
+        matchPos   = findMatchingClose(text, bracketPos);
+      } else if (BRACKET_CLOSE[ch]) {
+        bracketPos = pos;
+        matchPos   = findMatchingOpen(text, bracketPos);
+      }
+    }
+
+    if (bracketPos !== -1 && matchPos !== -1) {
+      this._highlightBracketAt(text, bracketPos);
+      this._highlightBracketAt(text, matchPos);
     }
   }
 }

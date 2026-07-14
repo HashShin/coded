@@ -191,6 +191,33 @@ html, body {
 .tok-type { color: #4ec9b0; }
 .tok-op   { color: #d4d4d4; }
 
+/* ── Editor wrap (flex row: gutter + inner) ── */
+#editor-wrap {
+  display: flex;
+  flex-direction: row;
+  min-height: 100%;
+}
+
+/* ── Line number gutter ── */
+#line-numbers {
+  width: 3em;
+  padding: 8px 6px 8px 0;
+  text-align: right;
+  color: #666;
+  font: inherit;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.9em;
+  line-height: 1.5;
+  user-select: none;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+#line-numbers div { min-height: 1.5em; }
+
+/* ── Bracket match highlight ── */
+.tok-bracket-match { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
 /* ── Inner editor div ── */
 .editor-inner {
   outline: none;
@@ -200,10 +227,11 @@ html, body {
   font-family: 'Courier New', Courier, monospace;
   font-size: 14px;
   line-height: 1.5;
-  padding: 8px 8px 8px 48px;
+  padding: 8px 8px 8px 4px;
   tab-size: 2;
   -moz-tab-size: 2;
   color: #d4d4d4;
+  flex: 1;
 }
 
 .editor-inner div { min-height: 1.5em; }
@@ -227,6 +255,36 @@ html, body {
   color: #555;
   font-size: 16px;
   user-select: none;
+}
+
+/* ── Toolbar (wrap button etc.) ── */
+#toolbar {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 4px;
+}
+
+.toolbar-btn {
+  background: transparent;
+  border: 1px solid #555;
+  color: #999;
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toolbar-btn:hover {
+  background: #3a3a3a;
+  color: #d4d4d4;
+}
+
+.toolbar-btn.active {
+  border-color: #007acc;
+  color: #d4d4d4;
 }
 
 /* ── Status bar ── */

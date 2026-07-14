@@ -494,6 +494,12 @@ function init() {
     }
   });
 
+  // Word-wrap toggle button.
+  const btnWrap = document.getElementById('btn-wrap');
+  if (btnWrap) {
+    btnWrap.addEventListener('click', () => editor.toggleWrap());
+  }
+
   loadRootTree();
 
   // Restore previous session; fall back to welcome screen.
