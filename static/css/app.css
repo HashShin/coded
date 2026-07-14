@@ -139,6 +139,12 @@ html, body {
   border-top: 1px solid #007acc;
 }
 
+.tab.dirty .tab-label::after {
+  content: ' ●';
+  color: #e8a44d;
+  font-size: 10px;
+}
+
 .tab-close {
   display: flex;
   align-items: center;

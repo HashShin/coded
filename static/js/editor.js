@@ -419,6 +419,11 @@ class EditorInstance {
     if (caret !== null) {
       setCaretOffset(this._inner, caret.anchor, caret.focus);
     }
+
+    // Notify change listeners.
+    if (typeof this.onchange === 'function') {
+      this.onchange(text);
+    }
   }
 
   /**

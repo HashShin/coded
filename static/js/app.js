@@ -2,7 +2,7 @@
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-/** @type {Map<string, {content: string, dirty: boolean}>} */
+/** @type {Map<string, {content: string, dirty: boolean, savedContent: string}>} */
 const openFiles = new Map();
 
 /** Currently active tab path, or null. */
@@ -221,6 +221,7 @@ function createTab(filePath) {
   tab.title = filePath;
 
   const label = document.createElement('span');
+  label.className = 'tab-label';
   label.textContent = name;
 
   const closeBtn = document.createElement('button');
@@ -237,6 +238,71 @@ function createTab(filePath) {
   tab.addEventListener('click', () => activateTab(filePath));
 
   return tab;
+}
+
+/**
+ * Update the dirty indicator on the tab for filePath.
+ * @param {string} filePath
+ */
+function updateTabDirty(filePath) {
+  const file = openFiles.get(filePath);
+  const tab = tabBar.querySelector('.tab[data-path="' + CSS.escape(filePath) + '"]');
+  if (!tab || !file) return;
+  if (file.dirty) {
+    tab.classList.add('dirty');
+  } else {
+    tab.classList.remove('dirty');
+  }
+}
+
+/**
+ * Update dirty state for the given path based on current text.
+ * @param {string} filePath
+ * @param {string} text
+ */
+function updateDirtyState(filePath, text) {
+  const file = openFiles.get(filePath);
+  if (!file) return;
+  file.content = text;
+  file.dirty = (text !== file.savedContent);
+  updateTabDirty(filePath);
+}
+
+/**
+ * Save the current file to disk via PUT /api/file.
+ */
+async function saveCurrentFile() {
+  if (!activeTab || !editor) return;
+  const filePath = activeTab;
+  const content = editor.getValue();
+
+  try {
+    const res = await fetch('/api/file?path=' + encodeURIComponent(filePath), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      body: content,
+    });
+    if (!res.ok) {
+      let msg = 'Error ' + res.status;
+      try {
+        const body = await res.json();
+        msg = body.error || msg;
+      } catch (_) {}
+      console.error('Save failed:', msg);
+      if (statusPath) statusPath.textContent = filePath + '  [save failed: ' + msg + ']';
+      return;
+    }
+    // Success: mark clean.
+    const file = openFiles.get(filePath);
+    if (file) {
+      file.savedContent = content;
+      file.content = content;
+      file.dirty = false;
+      updateTabDirty(filePath);
+    }
+  } catch (e) {
+    console.error('Save network error:', e);
+  }
 }
 
 /**
@@ -326,7 +392,7 @@ async function openFile(filePath, treeRow) {
       return;
     }
     const content = await res.text();
-    openFiles.set(filePath, { content, dirty: false });
+    openFiles.set(filePath, { content, dirty: false, savedContent: content });
     activateTab(filePath);
   } catch (e) {
     alert('Network error: ' + e.message);
@@ -341,6 +407,19 @@ async function openFile(filePath, treeRow) {
 function init() {
   // Initialize the editor in the container div.
   editor = Editor.init(editorContainer);
+
+  // Wire up dirty-state tracking on every editor change.
+  editor.onchange = (text) => {
+    if (activeTab) updateDirtyState(activeTab, text);
+  };
+
+  // Ctrl+S / Cmd+S to save.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      saveCurrentFile();
+    }
+  });
 
   showWelcome();
   loadRootTree();

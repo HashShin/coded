@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 
 	"webeditor/server"
 )
@@ -20,6 +21,13 @@ func main() {
 		root, err = os.Getwd()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: could not get working directory: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		var err error
+		root, err = filepath.Abs(root)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: could not resolve directory: %v\n", err)
 			os.Exit(1)
 		}
 	}
