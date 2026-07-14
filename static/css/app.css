@@ -304,6 +304,30 @@ html, body {
 }
 .folded-line { display: none !important; }
 
+/* ── Find/Replace panel ── */
+#find-panel {
+  position: fixed;
+  top: 40px;
+  right: 16px;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  padding: 8px;
+  border-radius: 4px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  z-index: 100;
+}
+#find-panel input[type=text] { width: 160px; }
+mark.search-match { background: rgba(255,200,0,0.35); color: inherit; border-radius: 2px; }
+mark.search-match.current { background: rgba(255,160,0,0.7); }
+
+/* ── Folder search panel ── */
+#folder-search-panel { padding: 8px; border-top: 1px solid #333; }
+#folder-search-results { overflow-y: auto; max-height: 60vh; font-size: 0.85em; }
+.search-result-item { cursor: pointer; padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.search-result-item:hover { background: #333; }
+
 /* ── Status bar ── */
 #status-bar {
   height: 22px;

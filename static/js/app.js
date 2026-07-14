@@ -475,6 +475,7 @@ async function loadSession() {
 function init() {
   // Initialize the editor in the container div.
   editor = Editor.init(editorContainer);
+  window.editor = editor;
 
   // Wire up dirty-state tracking on every editor change.
   editor.onchange = (text) => {
@@ -487,10 +488,29 @@ function init() {
   };
 
   // Ctrl+S / Cmd+S to save.
+  // Ctrl+F: find, Ctrl+H: find+replace, Ctrl+Shift+F: folder search.
   document.addEventListener('keydown', (e) => {
     if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       saveCurrentFile();
+      return;
+    }
+    if (e.ctrlKey && !e.metaKey) {
+      if (e.shiftKey && e.key === 'F') {
+        e.preventDefault();
+        if (window.Search) Search.openFolderSearch();
+        return;
+      }
+      if (!e.shiftKey && e.key === 'f') {
+        e.preventDefault();
+        if (window.Search) Search.openFind();
+        return;
+      }
+      if (!e.shiftKey && e.key === 'h') {
+        e.preventDefault();
+        if (window.Search) Search.openFindReplace();
+        return;
+      }
     }
   });
 
@@ -509,3 +529,6 @@ function init() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
+// Expose openFile globally so search.js can open files from results.
+window.openFile = openFile;

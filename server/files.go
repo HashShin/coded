@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // writeJSONError writes a JSON error response with the correct Content-Type.
@@ -275,5 +278,148 @@ func handleFilePut(root string, w http.ResponseWriter, r *http.Request) {
 func handleFilesStub() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, "not implemented", http.StatusNotImplemented)
+	}
+}
+
+// searchResult is one match returned by /api/search.
+type searchResult struct {
+	File string `json:"file"`
+	Line int    `json:"line"`
+	Text string `json:"text"`
+}
+
+// handleSearch serves GET /api/search?q=<query>&regex=<0|1>&path=<optional subpath>
+// It walks the root directory (or an optional sub-path) and returns matching lines.
+func handleSearch(root string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		q := r.URL.Query().Get("q")
+		if q == "" {
+			writeJSONError(w, "q required", http.StatusBadRequest)
+			return
+		}
+
+		isRegex := r.URL.Query().Get("regex") == "1"
+
+		// Compile matcher.
+		var re *regexp.Regexp
+		if isRegex {
+			var err error
+			re, err = regexp.Compile(q)
+			if err != nil {
+				writeJSONError(w, "invalid regex: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+
+		// Resolve optional sub-path.
+		searchRoot := root
+		if subPath := r.URL.Query().Get("path"); subPath != "" {
+			abs, err := resolveWithinRoot(root, subPath)
+			if err != nil {
+				writeJSONError(w, "bad path", http.StatusBadRequest)
+				return
+			}
+			searchRoot = abs
+		}
+
+		const maxResults = 200
+		const maxFileSize = 1 * 1024 * 1024 // 1 MB
+
+		// Directories to skip entirely.
+		skipDirs := map[string]bool{
+			".git":        true,
+			"node_modules": true,
+			".webeditor":  true,
+		}
+
+		var results []searchResult
+
+		err := filepath.WalkDir(searchRoot, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil // skip unreadable entries
+			}
+			if len(results) >= maxResults {
+				return filepath.SkipAll
+			}
+			if d.IsDir() {
+				if skipDirs[d.Name()] {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+
+			// Skip large files.
+			info, err := d.Info()
+			if err != nil || info.Size() > maxFileSize {
+				return nil
+			}
+
+			// Read file.
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+
+			// Binary detection: check first 512 bytes for null bytes or invalid UTF-8.
+			sniffLen := len(data)
+			if sniffLen > 512 {
+				sniffLen = 512
+			}
+			sniff := data[:sniffLen]
+			for _, b := range sniff {
+				if b == 0 {
+					return nil // binary
+				}
+			}
+			if !utf8.Valid(data) {
+				return nil // not valid UTF-8
+			}
+
+			// Compute relative path from root (not searchRoot).
+			relPath, err := filepath.Rel(root, path)
+			if err != nil {
+				relPath = path
+			}
+			relPath = filepath.ToSlash(relPath)
+
+			// Search line by line.
+			lines := strings.Split(string(data), "\n")
+			for lineNum, line := range lines {
+				if len(results) >= maxResults {
+					return filepath.SkipAll
+				}
+				var matched bool
+				if isRegex {
+					matched = re.MatchString(line)
+				} else {
+					matched = strings.Contains(strings.ToLower(line), strings.ToLower(q))
+				}
+				if matched {
+					results = append(results, searchResult{
+						File: relPath,
+						Line: lineNum + 1,
+						Text: line,
+					})
+				}
+			}
+			return nil
+		})
+		if err != nil && err != filepath.SkipAll {
+			log.Printf("search walk error: %v", err)
+		}
+
+		if results == nil {
+			results = []searchResult{}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{"results": results}); err != nil {
+			log.Printf("search json encode error: %v", err)
+		}
 	}
 }

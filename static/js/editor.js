@@ -663,6 +663,11 @@ class EditorInstance {
 
     this._inner.innerHTML = divs.join('');
     this._updateLineNumbers(text);
+
+    // Notify search module (or any other after-render hook).
+    if (typeof this.onAfterRender === 'function') {
+      this.onAfterRender();
+    }
   }
 
   /**

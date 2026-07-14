@@ -16,6 +16,17 @@
       <div id="sidebar">
         <div id="sidebar-header">Explorer</div>
         <ul id="file-tree"></ul>
+        <!-- Folder search panel (Ctrl+Shift+F) -->
+        <div id="folder-search-panel" style="display:none">
+          <div style="display:flex;gap:4px;margin-bottom:6px;">
+            <input id="folder-search-input" type="text" placeholder="Search in folder..." style="flex:1;min-width:0;">
+            <button id="btn-folder-search">Go</button>
+          </div>
+          <label style="font-size:0.85em;display:flex;align-items:center;gap:4px;margin-bottom:4px;">
+            <input id="folder-search-regex" type="checkbox"> Regex
+          </label>
+          <div id="folder-search-results"></div>
+        </div>
       </div>
 
       <!-- Content area -->
@@ -26,6 +37,19 @@
           <div id="toolbar">
             <button id="btn-wrap" class="toolbar-btn active" title="Toggle word wrap (Alt+Z)">Wrap</button>
           </div>
+        </div>
+
+        <!-- Find/Replace panel (Ctrl+F / Ctrl+H) -->
+        <div id="find-panel" style="display:none">
+          <input id="find-input" type="text" placeholder="Find...">
+          <input id="replace-input" type="text" placeholder="Replace...">
+          <label style="white-space:nowrap"><input id="find-regex" type="checkbox"> Regex</label>
+          <button id="btn-find-prev">&#9664;</button>
+          <button id="btn-find-next">&#9654;</button>
+          <button id="btn-replace-one">Replace</button>
+          <button id="btn-replace-all">All</button>
+          <span id="find-count"></span>
+          <button id="btn-find-close">&#x2715;</button>
         </div>
 
         <!-- Editor pane -->
@@ -47,5 +71,6 @@
   <script src="/js/tokenize.js"></script>
   <script src="/js/editor.js"></script>
   <script src="/js/app.js"></script>
+  <script src="/js/search.js"></script>
 </body>
 </html>
