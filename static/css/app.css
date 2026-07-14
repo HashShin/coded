@@ -200,7 +200,7 @@ html, body {
 
 /* ── Line number gutter ── */
 #line-numbers {
-  width: 3em;
+  width: 4em;
   padding: 8px 6px 8px 0;
   text-align: right;
   color: #666;
@@ -286,6 +286,23 @@ html, body {
   border-color: #007acc;
   color: #d4d4d4;
 }
+
+/* ── Code folding ── */
+.fold-marker {
+  cursor: pointer;
+  color: #888;
+  padding-right: 4px;
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+}
+.fold-marker:hover { color: #ccc; }
+.fold-marker-placeholder {
+  display: inline-block;
+  width: 1em;
+  padding-right: 4px;
+}
+.folded-line { display: none !important; }
 
 /* ── Status bar ── */
 #status-bar {

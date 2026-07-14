@@ -323,6 +323,106 @@ function getPlainText(editorEl) {
   return result;
 }
 
+// ── Code folding ──────────────────────────────────────────────────────────────
+
+/**
+ * Compute foldable ranges from text.
+ * Returns an array of {start, end} (1-indexed line numbers).
+ * Brace-based folding takes priority over indent-based when both match the same
+ * start line.
+ *
+ * @param {string} text
+ * @returns {Array<{start:number, end:number}>}
+ */
+function computeFoldRanges(text) {
+  const lines = text.split('\n');
+  const n = lines.length;
+
+  // Map from start line (1-indexed) -> range, for deduplication.
+  const byStart = new Map();
+
+  // ── Brace-based folding ───────────────────────────────────────────────────
+  // Stack entries: {line: number (1-indexed)}
+  const stack = [];
+  for (let i = 0; i < n; i++) {
+    const lineNum = i + 1;
+    const trimmed = lines[i].trimEnd();
+    if (trimmed.endsWith('{')) {
+      stack.push({ line: lineNum });
+    }
+    // Count closing braces on this line; match from innermost outward.
+    // Walk character by character to handle multiple braces on one line.
+    for (let ci = 0; ci < lines[i].length; ci++) {
+      if (lines[i][ci] === '}' && stack.length > 0) {
+        const openEntry = stack.pop();
+        const start = openEntry.line;
+        const end = lineNum;
+        if (end > start + 1) {
+          // Brace-based wins over indent-based for the same start.
+          byStart.set(start, { start, end, brace: true });
+        }
+      }
+    }
+  }
+
+  // ── Indent-based folding ─────────────────────────────────────────────────
+  // Compute indent level (number of leading spaces, treating tab=1) per line.
+  function indentLevel(line) {
+    let count = 0;
+    for (let i = 0; i < line.length; i++) {
+      if (line[i] === ' ')  { count++; }
+      else if (line[i] === '\t') { count++; }
+      else break;
+    }
+    return count;
+  }
+
+  // For each line i, find the next non-empty line's indent.
+  for (let i = 0; i < n; i++) {
+    const lineNum = i + 1;
+    if (lines[i].trim() === '') continue; // skip empty lines
+
+    const myIndent = indentLevel(lines[i]);
+
+    // Find next non-empty line.
+    let nextIdx = -1;
+    for (let j = i + 1; j < n; j++) {
+      if (lines[j].trim() !== '') { nextIdx = j; break; }
+    }
+    if (nextIdx === -1) continue;
+    const nextIndent = indentLevel(lines[nextIdx]);
+
+    if (nextIndent <= myIndent) continue; // not a fold start
+
+    // Find end: last line before indent drops back to or below myIndent.
+    let endIdx = nextIdx;
+    for (let j = nextIdx + 1; j < n; j++) {
+      if (lines[j].trim() === '') continue; // ignore empty lines
+      if (indentLevel(lines[j]) > myIndent) {
+        endIdx = j;
+      } else {
+        break;
+      }
+    }
+    const end = endIdx + 1; // 1-indexed
+
+    if (end > lineNum + 1) {
+      // Only add if not already claimed by brace-based at this start line.
+      if (!byStart.has(lineNum) || !byStart.get(lineNum).brace) {
+        byStart.set(lineNum, { start: lineNum, end });
+      }
+    }
+  }
+
+  // Return sorted array of {start, end}.
+  const ranges = [];
+  for (const r of byStart.values()) {
+    ranges.push({ start: r.start, end: r.end });
+  }
+  ranges.sort((a, b) => a.start - b.start);
+  return ranges;
+}
+
 // ── Bracket matching helpers ──────────────────────────────────────────────────
 
 const BRACKET_PAIRS = { '(': ')', '[': ']', '{': '}', '<': '>' };
@@ -381,6 +481,8 @@ class EditorInstance {
     this._lastText = null; // Track last rendered text to skip no-op re-renders.
     this._wrapEnabled = true; // Word-wrap state.
     this._bracketMatchSpans = []; // Currently highlighted bracket spans.
+    this._foldedRanges = new Set(); // Set of fold-start line numbers (1-indexed).
+    this._foldRanges = []; // Current computed fold ranges [{start,end}].
 
     // Build the editor layout:
     //   #editor-wrap (flex row)
@@ -505,26 +607,130 @@ class EditorInstance {
 
   /**
    * Render text with syntax highlighting into the editor.
+   * Applies folding: lines inside a folded range get class "folded-line".
    * @param {string} text
    */
   _render(text) {
+    // Recompute fold ranges from latest text.
+    this._foldRanges = computeFoldRanges(text);
+
+    // Build a set of lines that are hidden (inside a folded range).
+    // Also build a map: startLine -> end, for ranges that are folded.
+    const hiddenLines = new Set(); // 1-indexed line numbers to hide
+    for (const range of this._foldRanges) {
+      if (this._foldedRanges.has(range.start)) {
+        for (let ln = range.start + 1; ln <= range.end; ln++) {
+          hiddenLines.add(ln);
+        }
+      }
+    }
+
+    // Tokenize and build per-line HTML, then apply folded-line class.
     const tokens = window.tokenize(text, this._lang);
-    const html   = tokensToHtml(tokens);
-    this._inner.innerHTML = html;
+    // Build lines array with fold state applied.
+    const lines = [[]];
+    for (const tok of tokens) {
+      const parts = tok.text.split('\n');
+      for (let i = 0; i < parts.length; i++) {
+        if (i > 0) lines.push([]);
+        if (parts[i].length > 0) {
+          lines[lines.length - 1].push({ type: tok.type, text: parts[i] });
+        }
+      }
+    }
+
+    const divs = [];
+    for (let li = 0; li < lines.length; li++) {
+      const lineNum = li + 1;
+      const lineTokens = lines[li];
+      const hidden = hiddenLines.has(lineNum);
+      const classAttr = hidden ? ' class="folded-line"' : '';
+      if (lineTokens.length === 0) {
+        divs.push('<div' + classAttr + '><br></div>');
+      } else {
+        let inner = '';
+        for (const tok of lineTokens) {
+          const escaped = esc(tok.text);
+          if (tok.type === 'plain') {
+            inner += escaped;
+          } else {
+            inner += '<span class="tok-' + tok.type + '">' + escaped + '</span>';
+          }
+        }
+        divs.push('<div' + classAttr + '>' + inner + '</div>');
+      }
+    }
+
+    this._inner.innerHTML = divs.join('');
     this._updateLineNumbers(text);
   }
 
   /**
    * Update the line number gutter to match the current text.
+   * Shows fold markers (▶/▼) next to foldable lines.
    * @param {string} text
    */
   _updateLineNumbers(text) {
     const lineCount = text === '' ? 1 : text.split('\n').length;
+
+    // Build a map from start line -> end for fast lookup.
+    const foldableMap = new Map(); // startLine -> end
+    for (const range of this._foldRanges) {
+      foldableMap.set(range.start, range.end);
+    }
+
     let html = '';
     for (let i = 1; i <= lineCount; i++) {
-      html += '<div>' + i + '</div>';
+      if (foldableMap.has(i)) {
+        const isFolded = this._foldedRanges.has(i);
+        const marker = isFolded ? '&#9658;' : '&#9660;'; // ▶ or ▼
+        html += '<div>'
+          + '<span class="fold-marker" data-fold-start="' + i + '">' + marker + '</span>'
+          + i
+          + '</div>';
+      } else {
+        html += '<div><span class="fold-marker-placeholder"></span>' + i + '</div>';
+      }
     }
     this._gutter.innerHTML = html;
+
+    // Attach click handlers to fold markers.
+    const markers = this._gutter.querySelectorAll('.fold-marker');
+    for (const marker of markers) {
+      marker.addEventListener('click', () => {
+        const startLine = parseInt(marker.dataset.foldStart, 10);
+        this.toggleFold(startLine);
+      });
+    }
+  }
+
+  /**
+   * Toggle fold state for the given start line, then re-render.
+   * @param {number} startLine  1-indexed line number of the fold start.
+   */
+  toggleFold(startLine) {
+    if (this._foldedRanges.has(startLine)) {
+      this._foldedRanges.delete(startLine);
+    } else {
+      this._foldedRanges.add(startLine);
+    }
+    // Re-render using the last known text (getValue() reads DOM, works fine).
+    const text = this._lastText !== null ? this._lastText : this.getValue();
+    this._render(text);
+  }
+
+  /**
+   * Get the fold range containing the given 1-indexed line number, or null.
+   * @param {number} lineNum
+   * @returns {{start:number,end:number}|null}
+   */
+  _foldRangeForLine(lineNum) {
+    for (const range of this._foldRanges) {
+      if (lineNum >= range.start && lineNum <= range.end) {
+        return range;
+      }
+    }
+    return null;
   }
 
   /**
@@ -603,6 +809,41 @@ class EditorInstance {
     if (e.altKey && e.key === 'z') {
       e.preventDefault();
       this.toggleWrap();
+      return;
+    }
+
+    // ── Ctrl+Shift+[ : fold range containing cursor ──────────────────────────
+    if (e.ctrlKey && e.shiftKey && e.key === '[') {
+      e.preventDefault();
+      const text = this._lastText !== null ? this._lastText : this.getValue();
+      const caret = getCaretOffset(this._inner);
+      if (caret !== null) {
+        // Determine current line number (1-indexed).
+        const before = text.slice(0, caret.focus);
+        const lineNum = before.split('\n').length;
+        const range = this._foldRangeForLine(lineNum);
+        if (range && !this._foldedRanges.has(range.start)) {
+          this._foldedRanges.add(range.start);
+          this._render(text);
+        }
+      }
+      return;
+    }
+
+    // ── Ctrl+Shift+] : unfold range containing cursor ────────────────────────
+    if (e.ctrlKey && e.shiftKey && e.key === ']') {
+      e.preventDefault();
+      const text = this._lastText !== null ? this._lastText : this.getValue();
+      const caret = getCaretOffset(this._inner);
+      if (caret !== null) {
+        const before = text.slice(0, caret.focus);
+        const lineNum = before.split('\n').length;
+        const range = this._foldRangeForLine(lineNum);
+        if (range && this._foldedRanges.has(range.start)) {
+          this._foldedRanges.delete(range.start);
+          this._render(text);
+        }
+      }
       return;
     }
 
