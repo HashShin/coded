@@ -24,10 +24,10 @@ func Start(root string, ln net.Listener, assets embed.FS) error {
 	}
 	fileServer := http.FileServer(http.FS(staticFS))
 
-	// Placeholder /api/ handler — 501 Not Implemented.
-	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "not implemented", http.StatusNotImplemented)
-	})
+	// API handlers.
+	mux.HandleFunc("/api/tree", handleTree(root))
+	mux.HandleFunc("/api/file", handleFile(root))
+	mux.HandleFunc("/api/files", handleFilesStub())
 
 	// All other routes: try to serve a static file; fall back to index.html (SPA).
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,218 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Consolas', 'Menlo', 'Monaco', monospace;
+  font-size: 13px;
+  background: #1e1e1e;
+  color: #d4d4d4;
+}
+
+/* ── App shell ── */
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ── Main area: sidebar + content ── */
+#main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Sidebar ── */
+#sidebar {
+  width: 220px;
+  min-width: 120px;
+  background: #252526;
+  border-right: 1px solid #333;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex-shrink: 0;
+}
+
+#sidebar-header {
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #bbb;
+  border-bottom: 1px solid #333;
+  user-select: none;
+}
+
+#file-tree {
+  list-style: none;
+  padding: 4px 0;
+}
+
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+  color: #d4d4d4;
+}
+
+.tree-item:hover {
+  background: #2a2d2e;
+}
+
+.tree-item.active {
+  background: #094771;
+  color: #fff;
+}
+
+.tree-icon {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-style: normal;
+}
+
+.tree-children {
+  list-style: none;
+}
+
+/* ── Content area ── */
+#content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Tab bar ── */
+#tab-bar {
+  display: flex;
+  flex-direction: row;
+  background: #2d2d2d;
+  border-bottom: 1px solid #333;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-shrink: 0;
+  min-height: 35px;
+}
+
+#tab-bar::-webkit-scrollbar {
+  height: 3px;
+}
+#tab-bar::-webkit-scrollbar-thumb {
+  background: #555;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  height: 35px;
+  cursor: pointer;
+  white-space: nowrap;
+  border-right: 1px solid #333;
+  color: #999;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.tab:hover {
+  background: #353535;
+  color: #d4d4d4;
+}
+
+.tab.active {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border-top: 1px solid #007acc;
+}
+
+.tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  font-size: 14px;
+  line-height: 1;
+  color: #999;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.tab-close:hover {
+  background: #555;
+  color: #fff;
+}
+
+/* ── Editor pane ── */
+#editor-pane {
+  flex: 1;
+  overflow: auto;
+  background: #1e1e1e;
+  padding: 0;
+}
+
+#editor-pane::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+#editor-pane::-webkit-scrollbar-thumb {
+  background: #424242;
+}
+
+#file-content {
+  margin: 0;
+  padding: 12px 16px;
+  white-space: pre;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #d4d4d4;
+  min-height: 100%;
+}
+
+#welcome {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #555;
+  font-size: 16px;
+  user-select: none;
+}
+
+/* ── Status bar ── */
+#status-bar {
+  height: 22px;
+  background: #007acc;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 11px;
+  flex-shrink: 0;
+  gap: 16px;
+}
+
+#status-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

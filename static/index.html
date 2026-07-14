@@ -1,11 +1,45 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web Editor</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Editor</title>
+  <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
-    <h1>Web Editor &mdash; coming soon</h1>
+  <div id="app">
+
+    <!-- Main: sidebar + content -->
+    <div id="main">
+
+      <!-- Sidebar -->
+      <div id="sidebar">
+        <div id="sidebar-header">Explorer</div>
+        <ul id="file-tree"></ul>
+      </div>
+
+      <!-- Content area -->
+      <div id="content">
+
+        <!-- Tab bar -->
+        <div id="tab-bar"></div>
+
+        <!-- Editor pane -->
+        <div id="editor-pane">
+          <div id="welcome">Open a file from the sidebar</div>
+          <pre id="file-content" style="display:none"></pre>
+        </div>
+
+      </div><!-- /content -->
+    </div><!-- /main -->
+
+    <!-- Status bar -->
+    <div id="status-bar">
+      <span id="status-path"></span>
+    </div>
+
+  </div><!-- /app -->
+
+  <script src="/js/app.js"></script>
 </body>
 </html>
