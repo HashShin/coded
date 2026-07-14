@@ -27,7 +27,7 @@ func Start(root string, ln net.Listener, assets embed.FS) error {
 	// API handlers.
 	mux.HandleFunc("/api/tree", handleTree(root))
 	mux.HandleFunc("/api/file", handleFile(root))
-	mux.HandleFunc("/api/files", handleFilesStub())
+	mux.HandleFunc("/api/files", handleFiles(root))
 	mux.HandleFunc("/api/session", handleSession(root))
 	mux.HandleFunc("/api/search", handleSearch(root))
 

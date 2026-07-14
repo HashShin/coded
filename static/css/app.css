@@ -328,6 +328,46 @@ mark.search-match.current { background: rgba(255,160,0,0.7); }
 .search-result-item { cursor: pointer; padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .search-result-item:hover { background: #333; }
 
+/* ── Quick Open overlay ── */
+#quickopen-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 80px;
+  z-index: 200;
+}
+#quickopen-modal {
+  background: #1e1e1e;
+  border: 1px solid #555;
+  border-radius: 6px;
+  width: 560px; max-width: 90vw;
+  overflow: hidden;
+}
+#quickopen-input {
+  width: 100%; box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: 1em;
+  background: #2a2a2a; color: #eee;
+  border: none; border-bottom: 1px solid #444;
+  outline: none;
+}
+#quickopen-results { max-height: 360px; overflow-y: auto; }
+.quickopen-item {
+  padding: 6px 12px; cursor: pointer;
+  color: #ccc; font-size: 0.9em;
+}
+.quickopen-item:hover, .quickopen-item.selected { background: #2d5a8e; color: #fff; }
+
+/* ── Go-to-Line prompt ── */
+#gotoline-prompt {
+  position: fixed; top: 40px; left: 50%;
+  transform: translateX(-50%);
+  background: #2a2a2a; border: 1px solid #555;
+  padding: 8px 12px; border-radius: 4px;
+  z-index: 150; display: flex; align-items: center; gap: 8px;
+}
+#gotoline-input { width: 80px; background: #1e1e1e; color: #eee; border: 1px solid #555; padding: 4px; }
+
 /* ── Status bar ── */
 #status-bar {
   height: 22px;

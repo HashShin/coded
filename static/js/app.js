@@ -489,6 +489,7 @@ function init() {
 
   // Ctrl+S / Cmd+S to save.
   // Ctrl+F: find, Ctrl+H: find+replace, Ctrl+Shift+F: folder search.
+  // Ctrl+P: quick open, Ctrl+G: go to line.
   document.addEventListener('keydown', (e) => {
     if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
@@ -509,6 +510,16 @@ function init() {
       if (!e.shiftKey && e.key === 'h') {
         e.preventDefault();
         if (window.Search) Search.openFindReplace();
+        return;
+      }
+      if (!e.shiftKey && e.key === 'p') {
+        e.preventDefault();
+        if (window.QuickOpen) QuickOpen.open();
+        return;
+      }
+      if (!e.shiftKey && e.key === 'g') {
+        e.preventDefault();
+        if (window.QuickOpen) QuickOpen.openGoToLine();
         return;
       }
     }

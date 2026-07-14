@@ -274,10 +274,83 @@ func handleFilePut(root string, w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, `{"ok":true}`)
 }
 
-// handleFilesStub serves GET /api/files — stubbed for Task 9.
-func handleFilesStub() http.HandlerFunc {
+// handleFiles serves GET /api/files.
+// It walks the root directory recursively and returns all non-binary file paths
+// (relative, forward-slash separated), sorted alphabetically, up to 5000 files.
+// Directories named .git, node_modules, or .webeditor are skipped, as are files
+// larger than 10 MB and files containing a null byte in the first 512 bytes.
+func handleFiles(root string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeJSONError(w, "not implemented", http.StatusNotImplemented)
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		const maxFiles = 5000
+		const maxFileSize = 10 * 1024 * 1024 // 10 MB
+
+		skipDirs := map[string]bool{
+			".git":         true,
+			"node_modules": true,
+			".webeditor":   true,
+		}
+
+		var files []string
+
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil // skip unreadable entries
+			}
+			if d.IsDir() {
+				if skipDirs[d.Name()] {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if len(files) >= maxFiles {
+				return filepath.SkipAll
+			}
+
+			// Skip large files.
+			info, err := d.Info()
+			if err != nil || info.Size() > maxFileSize {
+				return nil
+			}
+
+			// Binary detection: check first 512 bytes for null bytes.
+			f, err := os.Open(path)
+			if err != nil {
+				return nil
+			}
+			var sniff [512]byte
+			n, _ := f.Read(sniff[:])
+			f.Close()
+			for i := 0; i < n; i++ {
+				if sniff[i] == 0 {
+					return nil // binary
+				}
+			}
+
+			relPath, err := filepath.Rel(root, path)
+			if err != nil {
+				relPath = path
+			}
+			files = append(files, filepath.ToSlash(relPath))
+			return nil
+		})
+		if err != nil && err != filepath.SkipAll {
+			log.Printf("files walk error: %v", err)
+		}
+
+		if files == nil {
+			files = []string{}
+		}
+		sort.Strings(files)
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{"files": files}); err != nil {
+			log.Printf("files json encode error: %v", err)
+		}
 	}
 }
 
