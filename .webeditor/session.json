@@ -1,1 +1,1 @@
-{"openTabs":[{"path":"embed.go","content":"package main\nimport \"embed\"\n//go:embed static\nvar staticFiles embed.FS","savedContent":"package main\n\nimport \"embed\"\n\n//go:embed static\nvar staticFiles embed.FS\n","dirty":true}],"activeTab":"embed.go","caretPositions":{"embed.go":{"anchor":65,"focus":65}}}
+{"openTabs":[],"activeTab":null,"caretPositions":{}}

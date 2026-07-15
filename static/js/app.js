@@ -31,21 +31,40 @@ const statusPath     = document.getElementById('status-path');
  * @returns {string}
  */
 function langFromPath(filePath) {
-  const ext = filePath.split('.').pop().toLowerCase();
+  const base = filePath.split('/').pop();
+  // Exact filename matches (no extension).
+  const nameMap = {
+    'Makefile': 'sh', 'makefile': 'sh',
+    'Dockerfile': 'sh', 'dockerfile': 'sh',
+    'Jenkinsfile': 'sh',
+    '.bashrc': 'sh', '.zshrc': 'sh', '.profile': 'sh',
+    '.gitignore': 'plain', '.gitattributes': 'plain',
+    'README': 'md',
+  };
+  if (nameMap[base]) return nameMap[base];
+
+  // Extension-based detection.
+  const dotIdx = base.lastIndexOf('.');
+  if (dotIdx === -1) return 'plain'; // no extension
+  const ext = base.slice(dotIdx + 1).toLowerCase();
   const map = {
-    go:   'go',
-    js:   'js',
-    ts:   'ts',
-    jsx:  'jsx',
-    tsx:  'tsx',
-    py:   'py',
-    json: 'json',
-    html: 'html',
-    htm:  'html',
-    css:  'css',
-    md:   'md',
-    sh:   'sh',
-    bash: 'bash',
+    go: 'go',
+    js: 'js', mjs: 'js', cjs: 'js',
+    ts: 'ts', tsx: 'tsx', jsx: 'jsx',
+    py: 'py', pyw: 'py',
+    json: 'json', jsonc: 'json',
+    html: 'html', htm: 'html', svg: 'html', xml: 'html',
+    css: 'css', scss: 'css', less: 'css',
+    md: 'md', markdown: 'md',
+    sh: 'sh', bash: 'sh', zsh: 'sh', fish: 'sh',
+    yaml: 'sh', yml: 'sh',
+    toml: 'sh', ini: 'sh', env: 'sh',
+    rs: 'js',   // Rust — use JS tokenizer as closest match for braces/strings
+    c: 'js', h: 'js', cpp: 'js', cc: 'js', cxx: 'js', hpp: 'js',
+    java: 'js', kt: 'js', swift: 'js',
+    rb: 'py',   // Ruby — Python tokenizer close enough
+    php: 'js',
+    sql: 'plain',
   };
   return map[ext] || 'plain';
 }

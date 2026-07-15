@@ -519,8 +519,26 @@ class EditorInstance {
 
     inner.addEventListener('input',   this._onInput);
     inner.addEventListener('keydown', this._onKeydown);
-    inner.addEventListener('scroll',  this._onScroll);
     document.addEventListener('selectionchange', this._onSelChange);
+
+    // On mobile, undo/redo may not fire 'input'. Use beforeinput to schedule
+    // a re-check after the browser applies the history change.
+    inner.addEventListener('beforeinput', (e) => {
+      if (e.inputType === 'historyUndo' || e.inputType === 'historyRedo') {
+        setTimeout(() => {
+          // Force onchange even if _lastText matches (undo to saved state).
+          const text = this.getValue();
+          this._lastText = null; // reset so _onInput re-renders
+          this._onInput();
+        }, 0);
+      }
+    });
+
+    // Scroll sync: the scrolling container is the editor-pane (#editor-pane),
+    // not the inner contenteditable (which grows to fit content and doesn't scroll).
+    // We attach the scroll listener to containerEl's parent (the pane).
+    this._scrollContainer = containerEl.parentElement || containerEl;
+    this._scrollContainer.addEventListener('scroll', this._onScroll);
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -742,7 +760,7 @@ class EditorInstance {
    * Sync gutter scroll position to match the editor.
    */
   _onScroll() {
-    this._gutter.scrollTop = this._inner.scrollTop;
+    this._gutter.scrollTop = this._scrollContainer.scrollTop;
   }
 
   /**
@@ -778,7 +796,7 @@ class EditorInstance {
   destroy() {
     this._inner.removeEventListener('input',   this._onInput);
     this._inner.removeEventListener('keydown', this._onKeydown);
-    this._inner.removeEventListener('scroll',  this._onScroll);
+    this._scrollContainer.removeEventListener('scroll', this._onScroll);
     document.removeEventListener('selectionchange', this._onSelChange);
     if (this._wrap.parentNode) {
       this._wrap.parentNode.removeChild(this._wrap);

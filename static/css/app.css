@@ -270,10 +270,17 @@ html, body {
   font-size: 0.85em;
   line-height: 1.6;
   user-select: none;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
   flex-shrink: 0;
   border-right: 1px solid #3c3c3c;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  max-height: 100vh;
 }
+#line-numbers::-webkit-scrollbar { display: none; }
 #line-numbers div { min-height: 1.6em; }
 
 /* ── Bracket match ── */
