@@ -17,7 +17,7 @@ let _saveSessionTimer = null;
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 
 const fileTree       = document.getElementById('file-tree');
-const tabBar         = document.getElementById('tab-bar');
+const tabBar         = document.getElementById('topbar-tabs');
 const editorPane     = document.getElementById('editor-pane');
 const editorContainer = document.getElementById('editor-container');
 const welcome        = document.getElementById('welcome');
@@ -400,6 +400,7 @@ async function openFile(filePath, treeRow) {
     const content = await res.text();
     openFiles.set(filePath, { content, dirty: false, savedContent: content });
     activateTab(filePath);
+    if (window._closeSidebarIfMobile) window._closeSidebarIfMobile();
   } catch (e) {
     alert('Network error: ' + e.message);
     console.error(e);
@@ -524,6 +525,30 @@ function init() {
       }
     }
   });
+
+  // Sidebar drawer: toggle, close button, backdrop tap.
+  const btnSidebar = document.getElementById('btn-sidebar-toggle');
+  const sidebar = document.getElementById('sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  const btnSidebarClose = document.getElementById('btn-sidebar-close');
+
+  function openSidebar() {
+    sidebar.classList.remove('hidden');
+    backdrop.classList.remove('hidden');
+  }
+  function closeSidebar() {
+    sidebar.classList.add('hidden');
+    backdrop.classList.add('hidden');
+  }
+
+  if (btnSidebar) btnSidebar.addEventListener('click', () => {
+    sidebar.classList.contains('hidden') ? openSidebar() : closeSidebar();
+  });
+  if (btnSidebarClose) btnSidebarClose.addEventListener('click', closeSidebar);
+  if (backdrop) backdrop.addEventListener('click', closeSidebar);
+
+  // Close sidebar after opening a file on mobile (small screens).
+  window._closeSidebarIfMobile = () => { if (window.innerWidth < 768) closeSidebar(); };
 
   // Word-wrap toggle button.
   const btnWrap = document.getElementById('btn-wrap');

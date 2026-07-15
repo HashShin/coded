@@ -2,68 +2,68 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Coded</title>
   <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
   <div id="app">
 
-    <!-- Main: sidebar + content -->
-    <div id="main">
+    <!-- Top bar (always visible) -->
+    <div id="topbar">
+      <button id="btn-sidebar-toggle" class="topbar-btn" aria-label="Toggle sidebar">&#9776;</button>
+      <span id="app-name">Coded</span>
+      <div id="topbar-tabs"></div>
+      <button id="btn-wrap" class="topbar-btn" title="Toggle word wrap">&#8631;</button>
+    </div>
 
-      <!-- Sidebar -->
-      <div id="sidebar">
-        <div id="sidebar-header">Explorer</div>
-        <ul id="file-tree"></ul>
-        <!-- Folder search panel (Ctrl+Shift+F) -->
-        <div id="folder-search-panel" style="display:none">
-          <div style="display:flex;gap:4px;margin-bottom:6px;">
-            <input id="folder-search-input" type="text" placeholder="Search in folder..." style="flex:1;min-width:0;">
-            <button id="btn-folder-search">Go</button>
-          </div>
-          <label style="font-size:0.85em;display:flex;align-items:center;gap:4px;margin-bottom:4px;">
-            <input id="folder-search-regex" type="checkbox"> Regex
-          </label>
-          <div id="folder-search-results"></div>
+    <!-- Sidebar drawer overlay -->
+    <div id="sidebar-backdrop" class="hidden"></div>
+    <div id="sidebar" class="hidden">
+      <div id="sidebar-header">
+        <span>Explorer</span>
+        <button id="btn-sidebar-close" class="sidebar-close-btn" aria-label="Close sidebar">&#x2715;</button>
+      </div>
+      <ul id="file-tree"></ul>
+      <!-- Folder search panel (opened via search button) -->
+      <div id="folder-search-panel" style="display:none">
+        <div style="display:flex;gap:4px;margin-bottom:6px;">
+          <input id="folder-search-input" type="text" placeholder="Search in folder...">
+          <button id="btn-folder-search">Go</button>
         </div>
+        <label style="font-size:0.85em;display:flex;align-items:center;gap:4px;margin-bottom:4px;">
+          <input id="folder-search-regex" type="checkbox"> Regex
+        </label>
+        <div id="folder-search-results"></div>
+      </div>
+    </div>
+
+    <!-- Main content -->
+    <div id="content">
+
+      <!-- Find/Replace panel (Ctrl+F / Ctrl+H) -->
+      <div id="find-panel" style="display:none">
+        <input id="find-input" type="text" placeholder="Find...">
+        <input id="replace-input" type="text" placeholder="Replace...">
+        <label><input id="find-regex" type="checkbox"> Regex</label>
+        <button id="btn-find-prev">&#9664;</button>
+        <button id="btn-find-next">&#9654;</button>
+        <button id="btn-replace-one">Replace</button>
+        <button id="btn-replace-all">All</button>
+        <span id="find-count"></span>
+        <button id="btn-find-close">&#x2715;</button>
       </div>
 
-      <!-- Content area -->
-      <div id="content">
-
-        <!-- Tab bar + toolbar -->
-        <div id="tab-bar">
-          <div id="toolbar">
-            <span id="app-name">Coded</span>
-            <button id="btn-wrap" class="toolbar-btn active" title="Toggle word wrap (Alt+Z)">Wrap</button>
-          </div>
+      <!-- Editor pane -->
+      <div id="editor-pane">
+        <div id="welcome">
+          <span class="welcome-title">Coded</span>
+          <span>Tap ☰ to open a file</span>
         </div>
+        <div id="editor-container" style="display:none; height:100%;"></div>
+      </div>
 
-        <!-- Find/Replace panel (Ctrl+F / Ctrl+H) -->
-        <div id="find-panel" style="display:none">
-          <input id="find-input" type="text" placeholder="Find...">
-          <input id="replace-input" type="text" placeholder="Replace...">
-          <label style="white-space:nowrap"><input id="find-regex" type="checkbox"> Regex</label>
-          <button id="btn-find-prev">&#9664;</button>
-          <button id="btn-find-next">&#9654;</button>
-          <button id="btn-replace-one">Replace</button>
-          <button id="btn-replace-all">All</button>
-          <span id="find-count"></span>
-          <button id="btn-find-close">&#x2715;</button>
-        </div>
-
-        <!-- Editor pane -->
-        <div id="editor-pane">
-          <div id="welcome">
-            <span class="welcome-title">Coded</span>
-            <span>Open a file from the sidebar</span>
-          </div>
-          <div id="editor-container" style="display:none; height:100%;"></div>
-        </div>
-
-      </div><!-- /content -->
-    </div><!-- /main -->
+    </div><!-- /content -->
 
     <!-- Status bar -->
     <div id="status-bar">
