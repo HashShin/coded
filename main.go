@@ -1,7 +1,6 @@
 package main
 
 import (
-	"coded/server"
 	"flag"
 	"fmt"
 	"net"
@@ -9,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+
+	"github.com/HashShin/coded/server"
 )
 
 func openBrowser(url string) {
