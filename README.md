@@ -35,7 +35,7 @@ Open the printed URL in your browser. That's it — the entire UI (fonts include
 embedded in the binary.
 
 ```sh
-go build .               # produce a standalone `coded` binary
+go install .             # install `coded` to your Go binary path
 ```
 
 ## Features
