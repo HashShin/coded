@@ -18,6 +18,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Go-1.23-00ADD8" alt="Go 1.23">
   <img src="https://img.shields.io/badge/dependencies-none-brightgreen" alt="No runtime dependencies">
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License">
 </p>
 
 <p align="center">
