@@ -19,6 +19,10 @@
   <img src="https://img.shields.io/badge/dependencies-none-brightgreen" alt="No runtime dependencies">
 </p>
 
+<p align="center">
+  <img src="static/assets/sample.jpg" alt="Coded editor running on mobile" width="420">
+</p>
+
 ## Quick start
 
 ```sh
