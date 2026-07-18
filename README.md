@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/coded-logo.png" alt="Coded" width="800">
+  <img src="static/assets/coded-logo.png" alt="Coded" width="800">
 </p>
 <p align="center"><strong>A full code editor. Right in your browser.</strong></p>
 
