@@ -1384,6 +1384,7 @@ async function openFile(filePath, treeRow) {
   // If already open, just switch to it.
   if (openFiles.has(filePath)) {
     activateTab(filePath);
+    if (window._closeSidebarIfMobile) window._closeSidebarIfMobile();
     return;
   }
 
