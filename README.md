@@ -8,6 +8,7 @@
 </p>
 
 <p align="center">
+  <a href="#install">Install</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#features">Features</a> ·
   <a href="#keyboard-shortcuts">Shortcuts</a> ·
@@ -23,20 +24,22 @@
   <img src="static/assets/sample.png" alt="Coded editor running on mobile" width="280">
 </p>
 
+## Install
+
+```sh
+go install .
+```
+
 ## Quick start
 
 ```sh
-go run .                 # serve the current directory
-go run . --dir ~/myapp   # serve a specific directory
-go run . --port 8080     # pin a port (default: first free port)
+coded                     # serve the current directory
+coded --dir ~/myapp       # serve a specific directory
+coded --port 8080         # use a specific port
 ```
 
-Open the printed URL in your browser. That's it — the entire UI (fonts included) is
-embedded in the binary.
-
-```sh
-go install .             # install `coded` to your Go binary path
-```
+The browser opens automatically. The entire UI, including fonts, is embedded in the
+installed executable.
 
 ## Features
 
