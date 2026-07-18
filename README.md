@@ -32,10 +32,18 @@ go install .
 
 ## Quick start
 
+Go to the project you want to edit, then start Coded:
+
 ```sh
-coded                     # serve the current directory
-coded --dir ~/myapp       # serve a specific directory
-coded --port 8080         # use a specific port
+cd ~/myproject
+coded
+```
+
+You can also open another directory or choose a specific port:
+
+```sh
+coded --dir ~/myapp
+coded --port 8080
 ```
 
 The browser opens automatically. The entire UI, including fonts, is embedded in the
