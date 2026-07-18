@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="static/assets/sample.jpg" alt="Coded editor running on mobile" width="420">
+  <img src="static/assets/sample.jpg" alt="Coded editor running on mobile" width="280">
 </p>
 
 ## Quick start
