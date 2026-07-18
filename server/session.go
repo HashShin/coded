@@ -10,7 +10,7 @@ import (
 
 // handleSession dispatches GET and PUT requests for /api/session.
 func handleSession(root string) http.HandlerFunc {
-	sessionDir  := filepath.Join(root, ".webeditor")
+	sessionDir := filepath.Join(root, ".coded")
 	sessionFile := filepath.Join(sessionDir, "session.json")
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +50,7 @@ func handleSessionPut(sessionDir, sessionFile string, w http.ResponseWriter, r *
 		return
 	}
 
-	// Ensure the .webeditor directory exists.
+	// Ensure the .coded directory exists.
 	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
 		writeJSONError(w, "mkdir error", http.StatusInternalServerError)
 		return

@@ -1,14 +1,36 @@
 package main
 
 import (
+	"coded/server"
 	"flag"
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
-
-	"webeditor/server"
+	"runtime"
 )
+
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "android": // Termux
+		cmd = exec.Command("termux-open-url", url)
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", url)
+	default: // linux
+		// Prefer termux-open-url if available (Termux on Android reports linux).
+		if _, err := exec.LookPath("termux-open-url"); err == nil {
+			cmd = exec.Command("termux-open-url", url)
+		} else {
+			cmd = exec.Command("xdg-open", url)
+		}
+	}
+	// Fire and forget — if it fails the user still has the printed URL.
+	_ = cmd.Start()
+}
 
 func main() {
 	portFlag := flag.Int("port", 0, "port to listen on (0 = find a free port)")
@@ -41,7 +63,9 @@ func main() {
 
 	// Print the URL only after the listener is successfully bound.
 	port := ln.Addr().(*net.TCPAddr).Port
-	fmt.Printf("Listening on http://127.0.0.1:%d\n", port)
+	url := fmt.Sprintf("http://127.0.0.1:%d", port)
+	fmt.Printf("Listening on %s\n", url)
+	openBrowser(url)
 
 	if err := server.Start(root, ln, staticFiles); err != nil {
 		fmt.Fprintf(os.Stderr, "error: server exited: %v\n", err)

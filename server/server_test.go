@@ -162,7 +162,163 @@ func TestHandleFileGetTraversal(t *testing.T) {
 	}
 }
 
-// ── Part 6: GET /api/search ──────────────────────────────────────────────────
+// ── Part 6: POST /api/create ─────────────────────────────────────────────────
+
+func postJSON(t *testing.T, url, body string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
+func TestHandleCreate(t *testing.T) {
+	root := t.TempDir()
+	srv := httptest.NewServer(handleCreate(root))
+	defer srv.Close()
+
+	// Create a file.
+	resp := postJSON(t, srv.URL+"/api/create", `{"path":"new.txt","isDir":false}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("create file: expected 200, got %d", resp.StatusCode)
+	}
+	if _, err := os.Stat(filepath.Join(root, "new.txt")); err != nil {
+		t.Fatalf("file not created: %v", err)
+	}
+
+	// Create a directory.
+	resp = postJSON(t, srv.URL+"/api/create", `{"path":"newdir","isDir":true}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("create dir: expected 200, got %d", resp.StatusCode)
+	}
+	if info, err := os.Stat(filepath.Join(root, "newdir")); err != nil || !info.IsDir() {
+		t.Fatalf("dir not created: %v", err)
+	}
+
+	// Duplicate → 409.
+	resp = postJSON(t, srv.URL+"/api/create", `{"path":"new.txt","isDir":false}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("duplicate create: expected 409, got %d", resp.StatusCode)
+	}
+
+	// Path traversal → 400.
+	resp = postJSON(t, srv.URL+"/api/create", `{"path":"../escape.txt","isDir":false}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("traversal create: expected 400, got %d", resp.StatusCode)
+	}
+}
+
+// ── Part 7: POST /api/rename ─────────────────────────────────────────────────
+
+func TestHandleRename(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "old.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(handleRename(root))
+	defer srv.Close()
+
+	// Rename file.
+	resp := postJSON(t, srv.URL+"/api/rename", `{"from":"old.txt","to":"new.txt"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("rename: expected 200, got %d", resp.StatusCode)
+	}
+	if _, err := os.Stat(filepath.Join(root, "new.txt")); err != nil {
+		t.Fatalf("renamed file not found: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "old.txt")); err == nil {
+		t.Fatal("old file still exists after rename")
+	}
+
+	// Source not found → 404.
+	resp = postJSON(t, srv.URL+"/api/rename", `{"from":"missing.txt","to":"other.txt"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("missing source: expected 404, got %d", resp.StatusCode)
+	}
+
+	// Destination exists → 409.
+	if err := os.WriteFile(filepath.Join(root, "exists.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resp = postJSON(t, srv.URL+"/api/rename", `{"from":"new.txt","to":"exists.txt"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("dest exists: expected 409, got %d", resp.StatusCode)
+	}
+
+	// Path traversal → 400.
+	resp = postJSON(t, srv.URL+"/api/rename", `{"from":"new.txt","to":"../escape.txt"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("traversal rename: expected 400, got %d", resp.StatusCode)
+	}
+}
+
+// ── Part 8: POST /api/delete ─────────────────────────────────────────────────
+
+func TestHandleDelete(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "del.txt"), []byte("bye"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "subdir", "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "subdir", "nested", "f.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(handleDelete(root))
+	defer srv.Close()
+
+	// Delete a file.
+	resp := postJSON(t, srv.URL+"/api/delete", `{"path":"del.txt"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete file: expected 200, got %d", resp.StatusCode)
+	}
+	if _, err := os.Stat(filepath.Join(root, "del.txt")); err == nil {
+		t.Fatal("file still exists after delete")
+	}
+
+	// Delete a directory recursively.
+	resp = postJSON(t, srv.URL+"/api/delete", `{"path":"subdir"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete dir: expected 200, got %d", resp.StatusCode)
+	}
+	if _, err := os.Stat(filepath.Join(root, "subdir")); err == nil {
+		t.Fatal("dir still exists after delete")
+	}
+
+	// Not found → 404.
+	resp = postJSON(t, srv.URL+"/api/delete", `{"path":"missing.txt"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("missing delete: expected 404, got %d", resp.StatusCode)
+	}
+
+	// Path traversal → 400.
+	resp = postJSON(t, srv.URL+"/api/delete", `{"path":"../escape"}`)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("traversal delete: expected 400, got %d", resp.StatusCode)
+	}
+}
+
+// ── Part 9: GET /api/search ──────────────────────────────────────────────────
 
 func TestHandleSearch(t *testing.T) {
 	root := t.TempDir()

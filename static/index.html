@@ -13,8 +13,49 @@
     <div id="topbar">
       <button id="btn-sidebar-toggle" class="topbar-btn" aria-label="Toggle sidebar">&#9776;</button>
       <span id="app-name">Coded</span>
+      <button id="btn-save" class="topbar-btn" title="Save file (Ctrl+S)">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm3-10H5V5h10v4z"/></svg>
+      </button>
+      <button id="btn-run" class="topbar-btn" title="Run in browser" style="display:none">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+      </button>
+      <button id="btn-undo" class="topbar-btn" title="Undo" disabled>
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>
+      </button>
+      <button id="btn-redo" class="topbar-btn" title="Redo" disabled>
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22l2.36.78c1.06-3.19 4.06-5.5 7.6-5.5 1.96 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/></svg>
+      </button>
+      <button id="btn-search" class="topbar-btn" title="Find (Ctrl+F)">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 9.5 5a4.5 4.5 0 0 1 0 9z"/></svg>
+      </button>
+      <button id="btn-settings" class="topbar-btn" title="Settings">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54A.48.48 0 0 0 14 3h-3.84a.48.48 0 0 0-.48.41l-.36 2.54a7 7 0 0 0-1.61.94l-2.39-.96a.48.48 0 0 0-.59.22L3.41 9.47a.47.47 0 0 0 .12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.47.47 0 0 0-.12.61l1.92 3.32c.12.22.37.3.59.22l2.39-.96c.5.36 1.04.67 1.62.94l.36 2.54c.05.24.27.41.52.41h3.84c.24 0 .47-.17.52-.41l.36-2.54a7 7 0 0 0 1.61-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.47.47 0 0 0-.12-.61l-2.03-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
+      </button>
+    </div>
+
+    <!-- Find/Replace panel — overlays the topbar when active -->
+    <div id="find-panel" style="display:none">
+      <button id="btn-find-close" class="find-back" title="Close (Esc)">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+      </button>
+      <div class="find-main">
+        <span id="find-label" class="find-label"></span>
+        <input id="find-input" type="text" placeholder="Search…" style="display:none">
+        <button id="btn-find-prev" class="find-nav" title="Previous (Shift+Enter)">&#x2039;</button>
+        <button id="btn-find-next" class="find-nav" title="Next (Enter)">&#x203a;</button>
+        <span id="find-count"></span>
+      </div>
+      <input id="find-regex" type="checkbox" style="display:none">
+      <div id="find-replace-row" style="display:none">
+        <input id="replace-input" type="text" placeholder="Replace…">
+        <button id="btn-replace-one">Replace</button>
+        <button id="btn-replace-all">All</button>
+      </div>
+    </div>
+
+    <!-- Open-file tab strip -->
+    <div id="tabbar-row">
       <div id="topbar-tabs"></div>
-      <button id="btn-wrap" class="topbar-btn" title="Toggle word wrap">&#8631;</button>
     </div>
 
     <!-- Sidebar drawer overlay -->
@@ -22,7 +63,43 @@
     <div id="sidebar" class="hidden">
       <div id="sidebar-header">
         <span>Explorer</span>
-        <button id="btn-sidebar-close" class="sidebar-close-btn" aria-label="Close sidebar">&#x2715;</button>
+        <div class="sidebar-header-actions">
+          <button id="btn-selection-toggle" class="explorer-option-btn" type="button"
+                  aria-label="Select multiple files" title="Select multiple files">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
+              <path d="M14.3601 4.07866L15.2869 3.15178C16.8226 1.61607 19.3125 1.61607 20.8482 3.15178C22.3839 4.68748 22.3839 7.17735 20.8482 8.71306L19.9213 9.63993M14.3601 4.07866C14.3601 4.07866 14.4759 6.04828 16.2138 7.78618C17.9517 9.52407 19.9213 9.63993 19.9213 9.63993M14.3601 4.07866L5.83882 12.5999C5.26166 13.1771 4.97308 13.4656 4.7249 13.7838C4.43213 14.1592 4.18114 14.5653 3.97634 14.995C3.80273 15.3593 3.67368 15.7465 3.41556 16.5208L2.32181 19.8021M19.9213 9.63993L11.4001 18.1612C10.8229 18.7383 10.5344 19.0269 10.2162 19.2751C9.84082 19.5679 9.43469 19.8189 9.00498 20.0237C8.6407 20.1973 8.25352 20.3263 7.47918 20.5844L4.19792 21.6782M4.19792 21.6782L3.39584 21.9456C3.01478 22.0726 2.59466 21.9734 2.31063 21.6894C2.0266 21.4053 1.92743 20.9852 2.05445 20.6042L2.32181 19.8021M4.19792 21.6782L2.32181 19.8021" stroke="currentColor" stroke-width="1.5"/>
+            </svg>
+          </button>
+          <button id="btn-hidden-toggle" class="explorer-option-btn" type="button" role="switch"
+                  aria-checked="false" aria-label="Show hidden files" title="Show hidden files">
+            <svg class="hidden-eye hidden-eye-open" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path fill="currentColor" d="M12 5c-5.5 0-9.6 5.3-9.8 5.5a2.4 2.4 0 0 0 0 3C2.4 13.7 6.5 19 12 19s9.6-5.3 9.8-5.5a2.4 2.4 0 0 0 0-3C21.6 10.3 17.5 5 12 5Zm0 12c-4.1 0-7.5-3.8-8.2-5 .8-1.2 4.1-5 8.2-5s7.5 3.8 8.2 5c-.8 1.2-4.1 5-8.2 5Zm0-7.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z"/>
+            </svg>
+            <svg class="hidden-eye hidden-eye-closed" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path fill="currentColor" d="m3.3 2 18.7 18.7-1.3 1.3-3.1-3.1A10.7 10.7 0 0 1 12 20C6.5 20 2.4 14.7 2.2 14.5a2.4 2.4 0 0 1 0-3A18.8 18.8 0 0 1 5.4 8L2 4.7 3.3 2Zm3.5 7.4A17 17 0 0 0 3.8 13c.8 1.2 4.1 5 8.2 5 1.5 0 2.9-.5 4.1-1.2l-1.8-1.7A3.5 3.5 0 0 1 8.9 9.7L6.8 7.6v1.8ZM12 6c5.5 0 9.6 5.3 9.8 5.5a2.4 2.4 0 0 1 .2 2.7l-1.5-1.5c-.9-1.3-4.1-4.7-8.5-4.7h-.7L9.5 6.2A11 11 0 0 1 12 6Z"/>
+            </svg>
+          </button>
+          <button id="btn-sidebar-close" class="sidebar-close-btn" aria-label="Close sidebar">&#x2715;</button>
+        </div>
+      </div>
+      <div id="selection-bar" aria-live="polite">
+        <span id="selection-count">0 selected</span>
+        <button id="btn-select-all" type="button" aria-label="Select all" title="Select all">
+          <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Zm2 0v14h14V5H5Zm11.3 3.3 1.4 1.4L10.5 17 6.8 13.3l1.4-1.4 2.3 2.3 5.8-5.9Z"/></svg>
+        </button>
+        <button id="btn-copy-selected" type="button" disabled aria-label="Copy selected items" title="Copy selected items">
+          <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M8 7V3h13v13h-4v5H3V7h5Zm2 0h7v7h2V5h-9v2Zm-5 2v10h10V9H5Z"/></svg>
+        </button>
+        <button id="btn-move-selected" type="button" disabled aria-label="Move selected items" title="Move selected items">
+          <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M3 5h7l2 2h9v12H3V5Zm2 4v8h14V9H5Zm7 1 4 3-4 3v-2H8v-2h4v-2Z"/></svg>
+        </button>
+        <button id="btn-delete-selected" class="selection-delete" type="button" disabled aria-label="Delete selected items" title="Delete selected items">
+          <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M7 21a2 2 0 0 1-2-2V6h14v13a2 2 0 0 1-2 2H7ZM4 3h5l1-1h4l1 1h5v2H4V3Zm3 5v11h10V8H7Zm2 2h2v7H9v-7Zm4 0h2v7h-2v-7Z"/></svg>
+        </button>
+      </div>
+      <div id="clipboard-hint" aria-live="polite">
+        <span id="clipboard-hint-text"></span>
+        <button id="btn-clipboard-cancel" type="button">Cancel</button>
       </div>
       <ul id="file-tree"></ul>
       <!-- Folder search panel (opened via search button) -->
@@ -41,40 +118,138 @@
     <!-- Main content -->
     <div id="content">
 
-      <!-- Find/Replace panel (Ctrl+F / Ctrl+H) -->
-      <div id="find-panel" style="display:none">
-        <input id="find-input" type="text" placeholder="Find...">
-        <input id="replace-input" type="text" placeholder="Replace...">
-        <label><input id="find-regex" type="checkbox"> Regex</label>
-        <button id="btn-find-prev">&#9664;</button>
-        <button id="btn-find-next">&#9654;</button>
-        <button id="btn-replace-one">Replace</button>
-        <button id="btn-replace-all">All</button>
-        <span id="find-count"></span>
-        <button id="btn-find-close">&#x2715;</button>
-      </div>
-
       <!-- Editor pane -->
       <div id="editor-pane">
+        <!-- External-change notification banner -->
+        <div id="change-banner">
+          <span id="change-banner-msg"></span>
+          <div class="change-banner-actions">
+            <button id="change-banner-reload">Reload</button>
+            <button id="change-banner-dismiss">Keep editing</button>
+          </div>
+        </div>
         <div id="welcome">
           <span class="welcome-title">Coded</span>
           <span>Tap ☰ to open a file</span>
         </div>
         <div id="editor-container" style="display:none; height:100%;"></div>
+        <div id="image-preview" style="display:none; height:100%;"></div>
       </div>
 
     </div><!-- /content -->
 
     <!-- Status bar -->
-    <div id="status-bar">
+    <div id="status-bar" style="display:none">
       <span id="status-path"></span>
       <span id="status-cursor"></span>
       <span id="status-lang"></span>
+      <span id="status-conn" title="Server connection"></span>
     </div>
 
   </div><!-- /app -->
 
+  <!-- Search modal -->
+  <div id="search-overlay" style="display:none">
+    <div id="search-modal">
+      <div class="settings-title">Search</div>
+      <textarea id="search-modal-input" placeholder="Search…" autocomplete="off" spellcheck="false" rows="1"></textarea>
+      <div class="settings-title" style="font-size:12px;font-weight:400;color:#888;margin-top:4px;">Replace with</div>
+      <textarea id="search-modal-replace" placeholder="Replace with…" autocomplete="off" spellcheck="false" rows="1"></textarea>
+      <div class="confirm-actions">
+        <button class="confirm-btn" id="search-modal-replace-all">Replace All</button>
+        <button class="confirm-btn primary" id="search-modal-search">Search</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settings-overlay" style="display:none">
+    <div id="settings-modal">
+      <div class="settings-title">Settings</div>
+      <div class="settings-row">
+        <span class="settings-label">Font size</span>
+        <div class="stepper">
+          <button class="zoom-btn" id="btn-font-dec" aria-label="Decrease font size">&minus;</button>
+          <span class="stepper-value" id="font-size-value">12px</span>
+          <button class="zoom-btn" id="btn-font-inc" aria-label="Increase font size">+</button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">Line height</span>
+        <div class="stepper">
+          <button class="zoom-btn" id="btn-lh-dec" aria-label="Decrease line height">&minus;</button>
+          <span class="stepper-value" id="line-height-value">1.6</span>
+          <button class="zoom-btn" id="btn-lh-inc" aria-label="Increase line height">+</button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">Font</span>
+        <select id="font-select" class="settings-select">
+          <option value="fira-code">Fira Code</option>
+          <option value="jetbrains-mono">JetBrains Mono</option>
+          <option value="cascadia-code">Cascadia Code</option>
+          <option value="geist-mono">Geist Mono</option>
+          <option value="source-code-pro">Source Code Pro</option>
+          <option value="ibm-plex-mono">IBM Plex Mono</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">Theme</span>
+        <select id="theme-select" class="settings-select">
+          <option value="monokai">Monokai</option>
+          <option value="pastel-on-dark">Pastel on Dark</option>
+          <option value="dracula">Dracula</option>
+          <option value="one-dark">One Dark Pro</option>
+          <option value="catppuccin-mocha">Catppuccin Mocha</option>
+          <option value="catppuccin-macchiato">Catppuccin Macchiato</option>
+          <option value="catppuccin-frappe">Catppuccin Frappé</option>
+          <option value="catppuccin-latte">Catppuccin Latte</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Prompt modal (name input for create/rename) -->
+  <div id="prompt-overlay" style="display:none">
+    <div id="prompt-modal">
+      <div class="confirm-title" id="prompt-title">Input</div>
+      <label class="confirm-message" id="prompt-label" for="prompt-input">Name</label>
+      <input id="prompt-input" type="text" autocomplete="off" spellcheck="false">
+      <div class="confirm-actions">
+        <button class="confirm-btn" id="prompt-cancel">Cancel</button>
+        <button class="confirm-btn primary" id="prompt-ok">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Unsaved-changes confirm modal -->
+  <div id="confirm-overlay" style="display:none">
+    <div id="confirm-modal">
+      <div class="confirm-title">Unsaved changes</div>
+      <div class="confirm-message" id="confirm-message"></div>
+      <div class="confirm-actions">
+        <button class="confirm-btn" id="confirm-cancel">Cancel</button>
+        <button class="confirm-btn danger" id="confirm-discard">Discard</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Server disconnected modal -->
+  <div id="offline-overlay" style="display:none">
+    <div id="offline-modal">
+      <div class="offline-icon">⚠</div>
+      <div class="offline-title">Server Disconnected</div>
+      <div class="offline-msg">The server is unreachable. Any unsaved changes cannot be saved until the connection is restored.</div>
+      <button id="offline-dismiss">Dismiss</button>
+    </div>
+  </div>
+
+  <script src="/vendor/marked/marked.min.js"></script>
+  <script src="/js/fileicons.js"></script>
+  <script src="/vendor/prism/prism-bundle.min.js"></script>
   <script src="/js/tokenize.js"></script>
+  <script src="/js/acdata.js"></script>
+  <script src="/js/autocomplete.js"></script>
   <script src="/js/editor.js"></script>
   <script src="/js/app.js"></script>
   <script src="/js/search.js"></script>

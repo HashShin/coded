@@ -1,4 +1,16 @@
-.worktrees
-.worktrees/
-editor
-*.test
+# Build output
+/coded
+/editor
+
+# Local editor state and scratch projects
+/.coded/
+/.testfolder/
+/testfolder/
+/.worktrees/
+
+# Environment files and secrets
+.env
+
+.openclaude
+.claude
+.codex

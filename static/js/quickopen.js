@@ -93,7 +93,8 @@ const QuickOpen = (() => {
   async function _loadFiles() {
     if (_fileCache !== null) return _fileCache;
     try {
-      const res = await fetch('/api/files');
+      const hidden = window.getShowHidden && window.getShowHidden() ? '?hidden=1' : '';
+      const res = await fetch('/api/files' + hidden);
       if (!res.ok) throw new Error('status ' + res.status);
       const data = await res.json();
       _fileCache = data.files || [];

@@ -10,6 +10,8 @@ const Search = (() => {
 
   let _matches = [];      // [{start, end, line}]
   let _current = -1;      // index into _matches for current match
+  let _query = '';         // raw query string (may contain newlines)
+  let _replaceQuery = '';  // raw replace string (may contain newlines)
 
   // ── DOM refs (lazily resolved after DOMContentLoaded) ─────────────────────
 
@@ -48,6 +50,75 @@ const Search = (() => {
   }
 
   /**
+   * Collect text nodes from the editor inner in the same order/space as
+   * getPlainText / getValue() — skipping fold-pills (contenteditable=false)
+   * and inserting a synthetic '\n' boundary between block divs, so that
+   * character offsets from findMatches() map 1-to-1 onto DOM positions.
+   *
+   * Returns [{node, start, end, synthetic}] where synthetic nodes are
+   * placeholder objects representing the '\n' between line divs (no real
+   * DOM node to wrap, we just need to account for their length).
+   */
+  function _buildNodeRanges(editorInner) {
+    const ranges = [];
+    let offset = 0;
+    let seenFirstBlock = false;
+
+    function isTrailingBr(brNode, blockEl) {
+      let n = brNode;
+      while (n && n !== blockEl) {
+        if (n.nextSibling) return false;
+        n = n.parentNode;
+      }
+      return true;
+    }
+
+    function walk(node, blockEl) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const len = node.nodeValue.length;
+        if (len > 0) {
+          ranges.push({ node, start: offset, end: offset + len });
+          offset += len;
+        }
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+      // Skip fold-pills and other contenteditable=false elements —
+      // they contribute nothing to getValue() output.
+      if (node.getAttribute && node.getAttribute('contenteditable') === 'false') return;
+
+      const tag = node.tagName.toUpperCase();
+
+      if (tag === 'BR') {
+        if (!isTrailingBr(node, blockEl)) {
+          ranges.push({ node: null, start: offset, end: offset + 1, br: node });
+          offset += 1;
+        }
+        return;
+      }
+
+      const isBlock = (tag === 'DIV' || tag === 'P');
+      if (isBlock && node !== editorInner) {
+        if (seenFirstBlock || offset > 0) {
+          // Newline boundary between blocks — synthetic, no real text node.
+          ranges.push({ node: null, start: offset, end: offset + 1, newline: true });
+          offset += 1;
+        }
+        seenFirstBlock = true;
+        blockEl = node;
+      }
+
+      for (const child of node.childNodes) {
+        walk(child, blockEl);
+      }
+    }
+
+    walk(editorInner, editorInner);
+    return ranges;
+  }
+
+  /**
    * Apply <mark> highlights to the editor DOM for all current matches.
    * Called after every render so marks survive re-renders.
    */
@@ -65,24 +136,10 @@ const Search = (() => {
 
     if (_matches.length === 0) return;
 
-    // Walk all text nodes and wrap match ranges.
-    // We iterate matches in order and walk the text node tree in parallel.
-    const walker = document.createTreeWalker(editorInner, NodeFilter.SHOW_TEXT, null);
-    const textNodes = [];
-    let node;
-    while ((node = walker.nextNode()) !== null) {
-      textNodes.push(node);
-    }
+    // Build offset map that mirrors getValue() exactly.
+    const nodeRanges = _buildNodeRanges(editorInner);
 
-    // Build a list of (globalOffset, textNode) pairs.
-    let offset = 0;
-    const nodeRanges = textNodes.map(tn => {
-      const start = offset;
-      offset += tn.nodeValue.length;
-      return { node: tn, start, end: offset };
-    });
-
-    // Apply matches in reverse order to avoid offset invalidation.
+    // Apply matches in reverse order to avoid invalidating earlier offsets.
     const toApply = _matches.slice().reverse();
     for (let mi = 0; mi < toApply.length; mi++) {
       const match = toApply[mi];
@@ -98,21 +155,19 @@ const Search = (() => {
    * @param {boolean} isCurrent
    */
   function _wrapMatchInNodes(nodeRanges, match, isCurrent) {
-    // Find all text nodes that overlap [match.start, match.end).
     for (let i = nodeRanges.length - 1; i >= 0; i--) {
       const nr = nodeRanges[i];
       if (nr.end <= match.start) break;    // no more overlap possible going left
-      if (nr.start >= match.end) continue; // this node is fully after match
+      if (nr.start >= match.end) continue; // fully after match
+      if (!nr.node) continue;              // synthetic newline boundary — skip
 
-      // Overlap: [overlapStart, overlapEnd) within text node.
       const overlapStart = Math.max(match.start, nr.start) - nr.start;
       const overlapEnd   = Math.min(match.end,   nr.end)   - nr.start;
 
       const tn = nr.node;
       const text = tn.nodeValue;
 
-      // Split: before | match | after
-      const before = text.slice(0, overlapStart);
+      const before  = text.slice(0, overlapStart);
       const matched = text.slice(overlapStart, overlapEnd);
       const after   = text.slice(overlapEnd);
 
@@ -123,7 +178,6 @@ const Search = (() => {
       const parent = tn.parentNode;
       if (!parent) continue;
 
-      // Replace the text node with before + mark + after.
       const frag = document.createDocumentFragment();
       if (before)  frag.appendChild(document.createTextNode(before));
       frag.appendChild(mark);
@@ -131,8 +185,6 @@ const Search = (() => {
 
       parent.replaceChild(frag, tn);
 
-      // Update nodeRanges entry so future iterations don't re-process.
-      // (We process right-to-left so earlier nodes are still valid.)
       nodeRanges.splice(i, 1,
         { node: document.createTextNode(before), start: nr.start, end: nr.start + before.length },
         { node: mark.firstChild || mark, start: nr.start + before.length, end: nr.start + before.length + matched.length },
@@ -147,10 +199,9 @@ const Search = (() => {
   function _reSearch() {
     const ed = window.editor;
     if (!ed) return;
-    const query = _el('find-input').value;
     const isRegex = _el('find-regex').checked;
     const text = ed.getValue();
-    _matches = findMatches(text, query, isRegex);
+    _matches = findMatches(text, _query, isRegex);
     _current = _matches.length > 0 ? 0 : -1;
     _updateCount();
     applyHighlights();
@@ -161,7 +212,7 @@ const Search = (() => {
     const countEl = _el('find-count');
     if (!countEl) return;
     if (_matches.length === 0) {
-      countEl.textContent = _el('find-input').value ? 'No results' : '';
+      countEl.textContent = _query ? 'No results' : '';
     } else {
       countEl.textContent = (_current + 1) + ' of ' + _matches.length;
     }
@@ -189,45 +240,58 @@ const Search = (() => {
   function _replaceCurrent() {
     const ed = window.editor;
     if (!ed || _current < 0 || _current >= _matches.length) return;
-    const replaceVal = _el('replace-input').value;
     const match = _matches[_current];
     const text = ed.getValue();
-    const newText = text.slice(0, match.start) + replaceVal + text.slice(match.end);
-    ed.setValue(newText, ed._lang);
+    const newText = text.slice(0, match.start) + _replaceQuery + text.slice(match.end);
+    ed.replaceContent(newText);
     _reSearch();
   }
 
   function _replaceAll() {
     const ed = window.editor;
-    if (!ed || _matches.length === 0) return;
-    const replaceVal = _el('replace-input').value;
-    const query = _el('find-input').value;
+    if (!ed || _matches.length === 0) return 0;
+    const count = _matches.length;
     const isRegex = _el('find-regex').checked;
     let text = ed.getValue();
     let re;
     try {
       re = isRegex
-        ? new RegExp(query, 'g')
-        : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-    } catch (e) { return; }
-    text = text.replace(re, replaceVal);
-    ed.setValue(text, ed._lang);
+        ? new RegExp(_query, 'g')
+        : new RegExp(_query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    } catch (e) { return 0; }
+    text = text.replace(re, _replaceQuery);
+    ed.replaceContent(text);
     _reSearch();
+    return count;
+  }
+
+  let _toastTimer = null;
+  function _showToast(msg) {
+    let toast = _el('search-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'search-toast';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.classList.add('visible');
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => toast.classList.remove('visible'), 2500);
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
   function openFind() {
+    _el('find-replace-row').style.display = 'none';
     _el('find-panel').style.display = 'flex';
-    _el('find-input').focus();
-    _el('find-input').select();
+    if (!navigator.maxTouchPoints) { _el('find-input').focus(); _el('find-input').select(); }
     _reSearch();
   }
 
   function openFindReplace() {
+    _el('find-replace-row').style.display = 'flex';
     _el('find-panel').style.display = 'flex';
-    _el('replace-input').focus();
-    _el('replace-input').select();
+    if (!navigator.maxTouchPoints) { _el('find-input').focus(); _el('find-input').select(); }
     _reSearch();
   }
 
@@ -235,6 +299,8 @@ const Search = (() => {
     _el('find-panel').style.display = 'none';
     _matches = [];
     _current = -1;
+    _query = '';
+    _replaceQuery = '';
     // Clear highlights.
     const editorInner = document.querySelector('.editor-inner');
     if (editorInner) {
@@ -312,13 +378,53 @@ const Search = (() => {
     }, 100);
   }
 
+  // ── Search modal ───────────────────────────────────────────────────────────
+
+  function openSearchModal() {
+    const overlay = _el('search-overlay');
+    overlay.style.display = 'flex';
+    // Pre-fill with current find-input value if any.
+    const modalInput = _el('search-modal-input');
+    modalInput.value = _el('find-input').value;
+    if (!navigator.maxTouchPoints) { modalInput.focus(); modalInput.select(); }
+  }
+
+  function _closeSearchModal() {
+    _el('search-overlay').style.display = 'none';
+  }
+
+  function _searchModalSearch() {
+    _query = _el('search-modal-input').value;
+    _replaceQuery = _el('search-modal-replace').value;
+    _closeSearchModal();
+    // Show read-only label: Search "query" (show first line if multiline)
+    const displayQuery = _query.split('\n')[0] + (_query.includes('\n') ? '…' : '');
+    const label = _el('find-label');
+    label.innerHTML = '<span class="find-label-prefix">Search</span>"' + displayQuery.replace(/"/g, '&quot;') + '"';
+    _el('find-replace-row').style.display = 'none';
+    _el('find-panel').style.display = 'flex';
+    _reSearch();
+  }
+
+  function _searchModalReplaceAll() {
+    _query = _el('search-modal-input').value;
+    _replaceQuery = _el('search-modal-replace').value;
+    if (!_query) return;
+    _closeSearchModal();
+    // Blur any focused element on touch to prevent keyboard from opening.
+    if (navigator.maxTouchPoints && document.activeElement) document.activeElement.blur();
+    _reSearch();
+    const count = _replaceAll();
+    _showToast(count > 0 ? 'Replaced ' + count + ' occurrence' + (count === 1 ? '' : 's') : 'No matches found');
+  }
+
   // ── Init ───────────────────────────────────────────────────────────────────
 
   function init() {
     // Wire find panel controls.
     _el('find-input').addEventListener('keyup', (e) => {
       if (e.key === 'Escape') { closeFind(); return; }
-      if (e.key === 'Enter') { _navigate(1); return; }
+      if (e.key === 'Enter') { _navigate(e.shiftKey ? -1 : 1); return; }
       _reSearch();
     });
     _el('find-regex').addEventListener('change', _reSearch);
@@ -331,6 +437,21 @@ const Search = (() => {
     _el('replace-input').addEventListener('keyup', (e) => {
       if (e.key === 'Escape') { closeFind(); return; }
       if (e.key === 'Enter') { _replaceCurrent(); return; }
+    });
+
+    // Wire search modal.
+    _el('search-modal-search').addEventListener('click', _searchModalSearch);
+    _el('search-modal-replace-all').addEventListener('click', _searchModalReplaceAll);
+    _el('search-overlay').addEventListener('click', (e) => {
+      if (e.target === _el('search-overlay')) _closeSearchModal();
+    });
+    _el('search-modal-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); _closeSearchModal(); return; }
+      if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); _searchModalSearch(); return; }
+    });
+    _el('search-modal-replace').addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); _closeSearchModal(); return; }
+      if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); _searchModalReplaceAll(); return; }
     });
 
     // Wire folder search.
@@ -350,7 +471,7 @@ const Search = (() => {
 
   document.addEventListener('DOMContentLoaded', init);
 
-  return { openFind, openFindReplace, openFolderSearch, closeFind, findMatches };
+  return { openFind, openFindReplace, openFolderSearch, openSearchModal, closeFind, findMatches };
 })();
 
 window.Search = Search;

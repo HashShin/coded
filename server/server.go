@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"os"
 )
 
 // Start serves the editor using an already-open listener.
@@ -27,9 +28,19 @@ func Start(root string, ln net.Listener, assets embed.FS) error {
 	// API handlers.
 	mux.HandleFunc("/api/tree", handleTree(root))
 	mux.HandleFunc("/api/file", handleFile(root))
+	mux.HandleFunc("/api/raw", handleRaw(root))
 	mux.HandleFunc("/api/files", handleFiles(root))
 	mux.HandleFunc("/api/session", handleSession(root))
 	mux.HandleFunc("/api/search", handleSearch(root))
+	mux.HandleFunc("/api/create", handleCreate(root))
+	mux.HandleFunc("/api/rename", handleRename(root))
+	mux.HandleFunc("/api/delete", handleDelete(root))
+	mux.HandleFunc("/api/copy", handleCopy(root))
+
+	// Live static preview of the editor's working directory.
+	// Serves root at /preview/ so relative imports (CSS, JS, images) resolve naturally.
+	previewServer := http.FileServer(http.FS(os.DirFS(root)))
+	mux.Handle("/preview/", http.StripPrefix("/preview/", previewServer))
 
 	// All other routes: try to serve a static file; fall back to index.html (SPA).
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

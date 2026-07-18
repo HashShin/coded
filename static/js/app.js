@@ -14,6 +14,32 @@ let editor = null;
 /** Autosave debounce timer handle. */
 let _saveSessionTimer = null;
 
+/** Per-file fold state: path -> number[] (collapsed start lines). */
+const foldStates = new Map();
+
+/** Whether to show dotfiles/dotdirs in tree and quick-open. */
+let showHidden = false;
+
+/** Path currently showing the external-change banner, or null. */
+let _bannerPath = null;
+
+/** Shows/hides the topbar run button; assigned after DOM ready. */
+let updateRunButton = null;
+
+/** True while a focus-triggered file-change check is in flight. */
+let _changeCheckInFlight = false;
+let _explorerRefreshInFlight = false;
+
+/** The currently selected directory for New File / New Folder actions. '' = root. */
+let selectedDir = '';
+
+/** Clipboard for cut/copy/paste: { path, isDir, mode: 'cut'|'copy' } or null. */
+let clipboard = null;
+
+/** Explorer multi-selection state: path -> isDirectory. */
+let selectionMode = false;
+const selectedItems = new Map();
+
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 
 const fileTree       = document.getElementById('file-tree');
@@ -30,13 +56,24 @@ const statusPath     = document.getElementById('status-path');
  * @param {string} filePath
  * @returns {string}
  */
+const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','svg','webp','bmp','ico','avif']);
+function extOf(filePath) {
+  const base = filePath.split('/').pop();
+  const i = base.lastIndexOf('.');
+  return i < 0 ? '' : base.slice(i + 1).toLowerCase();
+}
+function isImagePath(fp) { return IMAGE_EXTS.has(extOf(fp)); }
+function isHtmlPath(fp)  { const e = extOf(fp); return e === 'html' || e === 'htm'; }
+function isMdPath(fp)    { const e = extOf(fp); return e === 'md' || e === 'markdown'; }
+
 function langFromPath(filePath) {
   const base = filePath.split('/').pop();
   // Exact filename matches (no extension).
   const nameMap = {
     'Makefile': 'sh', 'makefile': 'sh',
-    'Dockerfile': 'sh', 'dockerfile': 'sh',
-    'Jenkinsfile': 'sh',
+    'Dockerfile': 'docker', 'dockerfile': 'docker',
+    'Jenkinsfile': 'clike',
+    '.gitconfig': 'ini', 'COMMIT_EDITMSG': 'git',
     '.bashrc': 'sh', '.zshrc': 'sh', '.profile': 'sh',
     '.gitignore': 'plain', '.gitattributes': 'plain',
     'README': 'md',
@@ -57,14 +94,16 @@ function langFromPath(filePath) {
     css: 'css', scss: 'css', less: 'css',
     md: 'md', markdown: 'md',
     sh: 'sh', bash: 'sh', zsh: 'sh', fish: 'sh',
-    yaml: 'sh', yml: 'sh',
-    toml: 'sh', ini: 'sh', env: 'sh',
-    rs: 'js',   // Rust — use JS tokenizer as closest match for braces/strings
-    c: 'js', h: 'js', cpp: 'js', cc: 'js', cxx: 'js', hpp: 'js',
-    java: 'js', kt: 'js', swift: 'js',
-    rb: 'py',   // Ruby — Python tokenizer close enough
-    php: 'js',
-    sql: 'plain',
+    yaml: 'yaml', yml: 'yaml',
+    toml: 'toml', ini: 'ini', env: 'ini',
+    rs: 'rust',
+    c: 'c', h: 'c',
+    cpp: 'cpp', cc: 'cpp', cxx: 'cpp', hpp: 'cpp',
+    java: 'clike', kt: 'clike', swift: 'clike',
+    rb: 'ruby',
+    php: 'php',
+    sql: 'sql',
+    dockerfile: 'docker',
   };
   return map[ext] || 'plain';
 }
@@ -77,10 +116,126 @@ function langFromPath(filePath) {
  * @returns {Promise<Array<{name:string,isDir:boolean,size:number}>>}
  */
 async function fetchTree(relPath) {
-  const url = '/api/tree' + (relPath ? '?path=' + encodeURIComponent(relPath) : '');
+  const params = [];
+  if (relPath) params.push('path=' + encodeURIComponent(relPath));
+  if (showHidden) params.push('hidden=1');
+  const url = '/api/tree' + (params.length ? '?' + params.join('&') : '');
   const res = await fetch(url);
   if (!res.ok) throw new Error('tree fetch failed: ' + res.status);
   return res.json();
+}
+
+// ── File-type badges ─────────────────────────────────────────────────────────
+// Extension → {label, color, icon?}. Colors follow each language's brand
+// color. `icon` is a slug into window.FILE_ICON_PATHS (fileicons.js) — when
+// present the real language logo is rendered; otherwise a text chip.
+const FILE_BADGES = {
+  go:     { label: 'GO', color: '#00add8', icon: 'go' },
+  rs:     { label: 'RS', color: '#f74c00', icon: 'rust' },
+  py:     { label: 'PY', color: '#4b8bbe', icon: 'python' },
+  pyw:    { label: 'PY', color: '#4b8bbe', icon: 'python' },
+  js:     { label: 'JS', color: '#f7df1e', icon: 'javascript' },
+  mjs:    { label: 'JS', color: '#f7df1e', icon: 'javascript' },
+  cjs:    { label: 'JS', color: '#f7df1e', icon: 'javascript' },
+  ts:     { label: 'TS', color: '#3178c6', icon: 'typescript' },
+  tsx:    { label: 'TX', color: '#3178c6', icon: 'react' },
+  jsx:    { label: 'JX', color: '#61dafb', icon: 'react' },
+  c:      { label: 'C',  color: '#5c9dd6', icon: 'c' },
+  h:      { label: 'H',  color: '#5c9dd6', icon: 'c' },
+  cpp:    { label: 'C+', color: '#659ad2', icon: 'cplusplus' },
+  cc:     { label: 'C+', color: '#659ad2', icon: 'cplusplus' },
+  hpp:    { label: 'H+', color: '#659ad2', icon: 'cplusplus' },
+  java:   { label: 'JV', color: '#e76f00', icon: 'openjdk' },
+  kt:     { label: 'KT', color: '#a97bff', icon: 'kotlin' },
+  kts:    { label: 'KT', color: '#a97bff', icon: 'kotlin' },
+  swift:  { label: 'SW', color: '#f05138', icon: 'swift' },
+  rb:     { label: 'RB', color: '#cc342d', icon: 'ruby' },
+  php:    { label: 'PH', color: '#777bb3', icon: 'php' },
+  cs:     { label: 'C#', color: '#b180d7', icon: 'sharp' },
+  html:   { label: '<>', color: '#e34c26', icon: 'html5' },
+  htm:    { label: '<>', color: '#e34c26', icon: 'html5' },
+  css:    { label: '#',  color: '#42a5f5', icon: 'css3' },
+  scss:   { label: '#',  color: '#cd6799', icon: 'sass' },
+  sass:   { label: '#',  color: '#cd6799', icon: 'sass' },
+  less:   { label: '#',  color: '#6b8cc4', icon: 'less' },
+  json:   { label: '{}', color: '#cbcb41', icon: 'json' },
+  yaml:   { label: 'YM', color: '#cb171e', icon: 'yaml' },
+  yml:    { label: 'YM', color: '#cb171e', icon: 'yaml' },
+  toml:   { label: 'TM', color: '#9c4221', icon: 'toml' },
+  xml:    { label: 'XM', color: '#8bc34a' },
+  md:     { label: 'MD', color: '#8a9199', icon: 'markdown' },
+  txt:    { txtGlyph: true, color: '#e8ecf0' },
+  sh:     { label: '$',  color: '#89e051', svg: '<rect x="3" y="5" width="17" height="14" rx="2" stroke="currentColor" stroke-width="2"/><path d="M7 10L9 12L7 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 14H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' },
+  bash:   { label: '$',  color: '#89e051', svg: '<rect x="3" y="5" width="17" height="14" rx="2" stroke="currentColor" stroke-width="2"/><path d="M7 10L9 12L7 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 14H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' },
+  zsh:    { label: '$',  color: '#89e051', svg: '<rect x="3" y="5" width="17" height="14" rx="2" stroke="currentColor" stroke-width="2"/><path d="M7 10L9 12L7 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 14H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' },
+  sql:    { label: 'SQ', color: '#e38c00' },
+  lua:    { label: 'LU', color: '#6b9aff', icon: 'lua' },
+  dart:   { label: 'DA', color: '#00b4ab', icon: 'dart' },
+  vue:    { label: 'VU', color: '#41b883', icon: 'vuedotjs' },
+  svelte: { label: 'SV', color: '#ff3e00', icon: 'svelte' },
+  svg:    { label: 'SVG', color: '#ffb13b' },
+  png:    { label: 'IMG', color: '#a074c4' },
+  jpg:    { label: 'IMG', color: '#a074c4' },
+  jpeg:   { label: 'IMG', color: '#a074c4' },
+  gif:    { label: 'IMG', color: '#a074c4' },
+  mod:    { label: 'GO', color: '#00add8', icon: 'go' }, // go.mod
+  sum:    { label: 'GO', color: '#00add8', icon: 'go' }, // go.sum
+  lock:   { label: 'LK', color: '#8a9199' },
+  zig:    { label: 'ZG', color: '#f7a41d', icon: 'zig' },
+  ex:     { label: 'EX', color: '#6e4a7e', icon: 'elixir' },
+  exs:    { label: 'EX', color: '#6e4a7e', icon: 'elixir' },
+  hs:     { label: 'HS', color: '#5e5086', icon: 'haskell' },
+  r:      { label: 'R',  color: '#276dc3', icon: 'r' },
+  // Binaries / compiled artifacts.
+  exe:    { label: '01', color: '#9e9e9e' },
+  bin:    { label: '01', color: '#9e9e9e' },
+  dll:    { label: '01', color: '#9e9e9e' },
+  so:     { label: '01', color: '#9e9e9e' },
+  dylib:  { label: '01', color: '#9e9e9e' },
+  o:      { label: '01', color: '#9e9e9e' },
+  a:      { label: '01', color: '#9e9e9e' },
+  wasm:   { label: 'WA', color: '#654ff0' },
+  class:  { label: '01', color: '#9e9e9e' },
+  pyc:    { label: '01', color: '#9e9e9e' },
+  apk:    { label: 'APK', color: '#3ddc84' },
+  jar:    { label: 'JAR', color: '#e76f00', icon: 'openjdk' },
+  // Archives.
+  zip:    { label: 'ZIP', color: '#b8a038' },
+  tar:    { label: 'ZIP', color: '#b8a038' },
+  gz:     { label: 'ZIP', color: '#b8a038' },
+  xz:     { label: 'ZIP', color: '#b8a038' },
+  bz2:    { label: 'ZIP', color: '#b8a038' },
+  '7z':   { label: 'ZIP', color: '#b8a038' },
+  rar:    { label: 'ZIP', color: '#b8a038' },
+  // Documents.
+  pdf:    { label: 'PDF', color: '#e53935' },
+};
+// Special full filenames (no useful extension).
+const FILE_BADGES_BY_NAME = {
+  'makefile':   { label: 'MK', color: '#6d8086' },
+  'dockerfile': { label: 'DK', color: '#2496ed', icon: 'docker' },
+  'license':    { label: '§',  color: '#d0bf41' },
+};
+const FILE_BADGE_DEFAULT = { fileGlyph: true, color: '#b8bec8' };
+const FILE_BADGE_EXEC    = { fileGlyph: true, color: '#ffffff' };
+
+/**
+ * Get the badge descriptor for a file name.
+ * @param {string} name
+ * @param {boolean} [isExec]  True if the server flagged the file executable.
+ * @returns {{label:string, color:string, icon?:string}}
+ */
+function badgeForFile(name, isExec) {
+  const lower = name.toLowerCase();
+  if (FILE_BADGES_BY_NAME[lower]) return FILE_BADGES_BY_NAME[lower];
+  const dot = lower.lastIndexOf('.');
+  if (dot > 0 && dot < lower.length - 1) {
+    const ext = lower.slice(dot + 1);
+    if (FILE_BADGES[ext]) return FILE_BADGES[ext];
+  }
+  // No known extension: executables get the binary badge.
+  if (isExec) return FILE_BADGE_EXEC;
+  return FILE_BADGE_DEFAULT;
 }
 
 /**
@@ -89,6 +244,15 @@ async function fetchTree(relPath) {
  * @param {string} parentPath  The directory these entries live in ('').
  * @returns {HTMLUListElement}
  */
+
+const FOLDER_CLOSED_SVG =
+  '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">' +
+  '<path d="M1.5 3.5 A 1 1 0 0 1 2.5 2.5 H 6 L 7.5 4 H 13.5 A 1 1 0 0 1 14.5 5 V 12.5 A 1 1 0 0 1 13.5 13.5 H 2.5 A 1 1 0 0 1 1.5 12.5 Z" fill="currentColor"/></svg>';
+const FOLDER_OPEN_SVG =
+  '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">' +
+  '<path d="M1.5 3.5 A 1 1 0 0 1 2.5 2.5 H 6 L 7.5 4 H 13 A 1 1 0 0 1 14 5 V 6 H 4.5 L 2.8 12.5 H 2.5 A 1 1 0 0 1 1.5 11.5 Z" fill="currentColor" opacity="0.75"/>' +
+  '<path d="M4.5 6.5 H 15 L 13.3 12.8 A 1 1 0 0 1 12.35 13.5 H 2.5 A 1 1 0 0 1 1.55 12.8 Z" fill="currentColor"/></svg>';
+
 function buildTreeList(entries, parentPath) {
   const ul = document.createElement('ul');
   ul.className = 'tree-children';
@@ -104,24 +268,106 @@ function buildTreeList(entries, parentPath) {
 
     // Indentation based on depth (count slashes).
     const depth = itemPath.split('/').length - 1;
-    row.style.paddingLeft = (8 + depth * 14) + 'px';
+    row.style.paddingLeft = (4 + depth * 14) + 'px';
 
     const icon = document.createElement('span');
     icon.className = 'tree-icon';
-    icon.textContent = entry.isDir ? '▶' : ' ';
+    icon.textContent = '';
 
     const label = document.createElement('span');
     label.textContent = entry.name;
+    label.className = 'tree-label';
 
     row.appendChild(icon);
+    if (!entry.isDir) {
+      const badge = badgeForFile(entry.name, !!entry.exec);
+      const iconPath = badge.icon && window.FILE_ICON_PATHS && window.FILE_ICON_PATHS[badge.icon];
+      const chip = document.createElement('span');
+      if (badge.svg) {
+        // Raw multi-element SVG (e.g. stroke-based icons).
+        chip.className = 'file-logo';
+        chip.style.color = badge.color;
+        chip.innerHTML =
+          '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">' +
+          badge.svg + '</svg>';
+      } else if (iconPath) {
+        // Real language logo (simple-icons path, 24x24 viewBox).
+        chip.className = 'file-logo';
+        chip.style.color = badge.color;
+        chip.innerHTML =
+          '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">' +
+          '<path d="' + iconPath + '" fill="currentColor"/></svg>';
+      } else if (badge.txtGlyph) {
+        // Document icon with "TXT" label for .txt files.
+        chip.className = 'file-logo';
+        chip.style.color = badge.color;
+        chip.innerHTML =
+          '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">' +
+          '<path fill="currentColor" d="M4.5 1.5h5L13 5v8.5a1 1 0 0 1-1 1H4.5a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1Z" opacity="0.8"/>' +
+          '<path fill="currentColor" d="M9.5 1.5 13 5H9.5Z"/>' +
+          '<path fill="#1e1e1e" d="M4.8 8.2h2.2v0.65H6.05v2H5.75V8.85H4.8zM9.5 8.2h2.2v0.65H10.75v2H10.45V8.85H9.5zM7.6 8.2l0.65 1.1 0.65-1.1h0.45l-0.87 1.4 0.87 1.4H8.9l-0.65-1.05-0.65 1.05H7.15l0.87-1.4-0.87-1.4z"/>' +
+          '</svg>';
+      } else if (badge.fileGlyph) {
+        // Generic document icon for files with no/unknown extension.
+        chip.className = 'file-logo';
+        chip.style.color = badge.color;
+        chip.innerHTML =
+          '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">' +
+          '<path fill="currentColor" d="M4.5 1.5h5L13 5v8.5a1 1 0 0 1-1 1H4.5a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1Z" opacity="0.75"/>' +
+          '<path fill="currentColor" d="M9.5 1.5 13 5H9.5Z"/></svg>';
+      } else {
+        chip.className = 'file-badge';
+        chip.textContent = badge.label;
+        chip.style.setProperty('--badge-color', badge.color);
+      }
+      row.appendChild(chip);
+    } else {
+      const chip = document.createElement('span');
+      chip.className = 'folder-icon';
+      chip.innerHTML = FOLDER_CLOSED_SVG;
+      row.appendChild(chip);
+    }
     row.appendChild(label);
     li.appendChild(row);
 
     if (entry.isDir) {
-      row.addEventListener('click', () => toggleDir(row, itemPath, icon));
+      row.addEventListener('click', (e) => {
+        if (e._fromLongPress) return;
+        if (selectionMode) { toggleSelectedItem(row); return; }
+        selectedDir = itemPath;
+        setSelectedRow(row);
+        toggleDir(row, itemPath);
+      });
     } else {
-      row.addEventListener('click', () => openFile(itemPath, row));
+      row.addEventListener('click', (e) => {
+        if (e._fromLongPress) return;
+        if (selectionMode) { toggleSelectedItem(row); return; }
+        selectedDir = itemPath.includes('/') ? itemPath.slice(0, itemPath.lastIndexOf('/')) : '';
+        setSelectedRow(row);
+        openFile(itemPath, row);
+      });
     }
+
+    // Right-click context menu.
+    row.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (selectionMode) { toggleSelectedItem(row); return; }
+      showContextMenu(itemPath, entry.isDir, e.clientX, e.clientY);
+    });
+
+    // Long-press context menu (touch).
+    let _lpTimer = null;
+    row.addEventListener('touchstart', (e) => {
+      _lpTimer = setTimeout(() => {
+        _lpTimer = null;
+        if (selectionMode) { toggleSelectedItem(row); return; }
+        const t = e.touches[0];
+        const fakeEvt = { _fromLongPress: true };
+        showContextMenu(itemPath, entry.isDir, t.clientX, t.clientY);
+      }, 500);
+    }, { passive: true });
+    row.addEventListener('touchmove', () => { clearTimeout(_lpTimer); _lpTimer = null; }, { passive: true });
+    row.addEventListener('touchend', () => { clearTimeout(_lpTimer); _lpTimer = null; }, { passive: true });
 
     ul.appendChild(li);
   }
@@ -135,23 +381,23 @@ function buildTreeList(entries, parentPath) {
  * @param {string} dirPath
  * @param {HTMLElement} icon
  */
-async function toggleDir(row, dirPath, icon) {
+async function toggleDir(row, dirPath) {
+  const folderChip = row.querySelector('.folder-icon');
   // If already expanded, collapse.
   const existing = row.nextElementSibling;
   if (existing && existing.classList.contains('tree-children')) {
     existing.remove();
-    icon.textContent = '▶';
+    if (folderChip) folderChip.innerHTML = FOLDER_CLOSED_SVG;
     return;
   }
 
-  icon.textContent = '…';
   try {
     const entries = await fetchTree(dirPath);
     const childList = buildTreeList(entries, dirPath);
     row.parentElement.appendChild(childList);
-    icon.textContent = '▼';
+    if (folderChip) folderChip.innerHTML = FOLDER_OPEN_SVG;
   } catch (e) {
-    icon.textContent = '▶';
+    if (folderChip) folderChip.innerHTML = FOLDER_CLOSED_SVG;
     console.error('Failed to expand dir:', dirPath, e);
   }
 }
@@ -176,6 +422,578 @@ async function loadRootTree() {
   }
 }
 
+// ── Selected row ─────────────────────────────────────────────────────────────
+
+function setSelectedRow(row) {
+  const prev = fileTree.querySelector('.tree-item.selected');
+  if (prev) prev.classList.remove('selected');
+  if (row) row.classList.add('selected');
+}
+
+function updateSelectionUI() {
+  const sidebar = document.getElementById('sidebar');
+  const toggle = document.getElementById('btn-selection-toggle');
+  const count = document.getElementById('selection-count');
+  const deleteBtn = document.getElementById('btn-delete-selected');
+  const copyBtn = document.getElementById('btn-copy-selected');
+  const moveBtn = document.getElementById('btn-move-selected');
+  if (sidebar) sidebar.classList.toggle('selection-mode', selectionMode);
+  if (toggle) {
+    const label = selectionMode ? 'Cancel selection' : 'Select multiple files';
+    toggle.classList.toggle('active', selectionMode);
+    toggle.setAttribute('aria-pressed', String(selectionMode));
+    toggle.setAttribute('aria-label', label);
+    toggle.title = label;
+  }
+  if (count) count.textContent = `${selectedItems.size} selected`;
+  if (deleteBtn) deleteBtn.disabled = selectedItems.size === 0;
+  if (copyBtn) copyBtn.disabled = selectedItems.size === 0;
+  if (moveBtn) moveBtn.disabled = selectedItems.size === 0;
+}
+
+function toggleSelectedItem(row) {
+  const path = row.dataset.path;
+  if (selectedItems.has(path)) {
+    selectedItems.delete(path);
+    row.classList.remove('multi-selected');
+  } else {
+    selectedItems.set(path, row.dataset.isdir === '1');
+    row.classList.add('multi-selected');
+  }
+  updateSelectionUI();
+}
+
+function setSelectionMode(enabled) {
+  selectionMode = enabled;
+  if (!enabled) {
+    selectedItems.clear();
+    fileTree.querySelectorAll('.multi-selected').forEach(row => row.classList.remove('multi-selected'));
+  }
+  updateSelectionUI();
+}
+
+function updateClipboardUI() {
+  const sidebar = document.getElementById('sidebar');
+  const text = document.getElementById('clipboard-hint-text');
+  if (!sidebar || !text) return;
+  sidebar.classList.toggle('clipboard-pending', !!clipboard);
+  if (!clipboard) {
+    text.textContent = '';
+    return;
+  }
+  const count = clipboard.items ? clipboard.items.length : 1;
+  const action = clipboard.mode === 'cut' ? 'ready to move' : 'copied';
+  text.textContent = `${count} item${count === 1 ? '' : 's'} ${action} · Long-press folder to paste`;
+}
+
+// ── Tree refresh preserving expanded state ────────────────────────────────────
+
+/**
+ * Attach pre-fetched children into a tree-children <ul> that was built by
+ * buildTreeList, for every dir row that was previously expanded and whose
+ * data is present in the prefetched map. Operates recursively, fully
+ * synchronous once all data is prefetched.
+ * @param {HTMLUListElement} ul - the <ul> built by buildTreeList
+ * @param {Set<string>} expanded - set of dir paths that were expanded
+ * @param {Map<string, Array>} prefetched - map of dirPath → entries array
+ */
+function _attachExpandedChildren(ul, expanded, prefetched) {
+  ul.querySelectorAll('.tree-item').forEach(row => {
+    if (row.dataset.isdir !== '1') return;
+    const dirPath = row.dataset.path;
+    if (!expanded.has(dirPath)) return;
+    const entries = prefetched.get(dirPath);
+    if (!entries) return; // dir was deleted or fetch failed — skip
+
+    // Mark folder chip as open.
+    const chip = row.querySelector('.folder-icon');
+    if (chip) chip.innerHTML = FOLDER_OPEN_SVG;
+
+    // Build child list and attach to the <li> (same as toggleDir does).
+    const childList = buildTreeList(entries, dirPath);
+    _attachExpandedChildren(childList, expanded, prefetched); // recurse
+    row.parentElement.appendChild(childList);
+  });
+}
+
+async function refreshTreePreservingState() {
+  // 1. Snapshot expanded paths and selected path before touching the DOM.
+  const expanded = new Set();
+  fileTree.querySelectorAll('.tree-item').forEach(row => {
+    if (row.nextElementSibling && row.nextElementSibling.classList.contains('tree-children')) {
+      expanded.add(row.dataset.path);
+    }
+  });
+  const selectedPath = fileTree.querySelector('.tree-item.selected')?.dataset.path ?? null;
+
+  // 2. Fetch all needed data in parallel (root + every expanded dir).
+  const pathsToFetch = ['', ...expanded];
+  const results = await Promise.all(pathsToFetch.map(p => fetchTree(p).catch(() => null)));
+  const prefetched = new Map();
+  pathsToFetch.forEach((p, i) => { if (results[i]) prefetched.set(p, results[i]); });
+
+  // 3. Build new tree entirely off-screen.
+  const rootEntries = prefetched.get('') || [];
+  const newUl = buildTreeList(rootEntries, '');
+  _attachExpandedChildren(newUl, expanded, prefetched);
+
+  // 4. Swap in one synchronous DOM operation — no blank frame.
+  fileTree.replaceChildren(...newUl.childNodes);
+
+  // 5. Restore selection highlight.
+  if (selectedPath) {
+    const sel = fileTree.querySelector(`.tree-item[data-path="${CSS.escape(selectedPath)}"]`);
+    if (sel) sel.classList.add('selected');
+  }
+  if (selectionMode) {
+    Array.from(selectedItems.keys()).forEach(path => {
+      const row = fileTree.querySelector(`.tree-item[data-path="${CSS.escape(path)}"]`);
+      if (row) row.classList.add('multi-selected');
+      else selectedItems.delete(path);
+    });
+    updateSelectionUI();
+  }
+}
+
+async function syncExplorerOnce() {
+  if (_explorerRefreshInFlight || document.hidden) return;
+  _explorerRefreshInFlight = true;
+  try {
+    await refreshTreePreservingState();
+  } catch (err) {
+    console.error('Explorer refresh failed:', err);
+  } finally {
+    _explorerRefreshInFlight = false;
+  }
+}
+
+// ── Prompt modal ──────────────────────────────────────────────────────────────
+
+/**
+ * Show a text-input prompt modal and return the entered value, or null if cancelled.
+ * @param {{title:string, label:string, initialValue?:string, confirmLabel?:string, allowEmpty?:boolean}} opts
+ * @returns {Promise<string|null>}
+ */
+function promptModal(opts) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('prompt-overlay');
+    const titleEl = document.getElementById('prompt-title');
+    const labelEl = document.getElementById('prompt-label');
+    const input   = document.getElementById('prompt-input');
+    const btnOk   = document.getElementById('prompt-ok');
+    const btnCancel = document.getElementById('prompt-cancel');
+    if (!overlay) { resolve(null); return; }
+
+    titleEl.textContent = opts.title || 'Input';
+    labelEl.textContent = opts.label || 'Name';
+    input.value = opts.initialValue || '';
+    btnOk.textContent = opts.confirmLabel || 'OK';
+
+    overlay.style.display = 'flex';
+    if (!navigator.maxTouchPoints) { input.focus(); input.select(); }
+
+    function finish(val) {
+      overlay.style.display = 'none';
+      btnOk.removeEventListener('click', onOk);
+      btnCancel.removeEventListener('click', onCancel);
+      overlay.removeEventListener('mousedown', onBg);
+      input.removeEventListener('keydown', onKey);
+      resolve(val);
+    }
+    function onOk() {
+      const v = input.value.trim();
+      if (!v && !opts.allowEmpty) { input.focus(); return; }
+      finish(v);
+    }
+    function onCancel() { finish(null); }
+    function onBg(e) { if (e.target === overlay) finish(null); }
+    function onKey(e) {
+      if (e.key === 'Enter') { e.preventDefault(); onOk(); }
+      if (e.key === 'Escape') { e.preventDefault(); finish(null); }
+    }
+    btnOk.addEventListener('click', onOk);
+    btnCancel.addEventListener('click', onCancel);
+    overlay.addEventListener('mousedown', onBg);
+    input.addEventListener('keydown', onKey);
+  });
+}
+
+// ── Context menu ──────────────────────────────────────────────────────────────
+
+function showContextMenu(itemPath, isDir, x, y) {
+  // Remove any existing menu.
+  const existing = document.getElementById('tree-context-menu');
+  if (existing) existing.remove();
+
+  const menu = document.createElement('div');
+  menu.id = 'tree-context-menu';
+  menu.className = 'tree-context-menu';
+
+  function addItem(label, fn) {
+    const btn = document.createElement('button');
+    btn.className = 'ctx-menu-item';
+    btn.textContent = label;
+    btn.addEventListener('click', () => { menu.remove(); fn(); });
+    menu.appendChild(btn);
+  }
+
+  const createDir = isDir ? itemPath : (itemPath.includes('/') ? itemPath.slice(0, itemPath.lastIndexOf('/')) : '');
+  addItem('New File',   () => createEntry(createDir, false));
+  addItem('New Folder', () => createEntry(createDir, true));
+  const sep = document.createElement('div');
+  sep.className = 'ctx-menu-sep';
+  menu.appendChild(sep);
+  addItem('Rename', () => renameEntry(itemPath, isDir));
+  addItem('Delete', () => deleteEntry(itemPath, isDir));
+  const sep2 = document.createElement('div');
+  sep2.className = 'ctx-menu-sep';
+  menu.appendChild(sep2);
+  addItem('Cut',  () => cutEntry(itemPath, isDir));
+  addItem('Copy', () => copyEntry(itemPath, isDir));
+  if (clipboard) {
+    const pasteDir = isDir ? itemPath : (itemPath.includes('/') ? itemPath.slice(0, itemPath.lastIndexOf('/')) : '');
+    addItem('Paste', () => pasteEntry(pasteDir));
+  }
+
+  // Position the menu, keeping it within the viewport.
+  menu.style.left = '0';
+  menu.style.top = '0';
+  document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  const left = Math.min(x, window.innerWidth - rect.width - 4);
+  const top  = Math.min(y, window.innerHeight - rect.height - 4);
+  menu.style.left = left + 'px';
+  menu.style.top  = top + 'px';
+
+  function dismiss(e) {
+    if (!menu.contains(e.target)) {
+      menu.remove();
+      document.removeEventListener('mousedown', dismiss, true);
+      document.removeEventListener('touchstart', dismiss, true);
+    }
+  }
+  setTimeout(() => {
+    document.addEventListener('mousedown', dismiss, true);
+    document.addEventListener('touchstart', dismiss, true);
+  }, 0);
+}
+
+function showRootContextMenu(x, y) {
+  const existing = document.getElementById('tree-context-menu');
+  if (existing) existing.remove();
+  const menu = document.createElement('div');
+  menu.id = 'tree-context-menu';
+  menu.className = 'tree-context-menu';
+  function addItem(label, fn) {
+    const btn = document.createElement('button');
+    btn.className = 'ctx-menu-item';
+    btn.textContent = label;
+    btn.addEventListener('click', () => { menu.remove(); fn(); });
+    menu.appendChild(btn);
+  }
+  addItem('New File',   () => createEntry('', false));
+  addItem('New Folder', () => createEntry('', true));
+  if (clipboard) {
+    const sep2 = document.createElement('div');
+    sep2.className = 'ctx-menu-sep';
+    menu.appendChild(sep2);
+    addItem('Paste', () => pasteEntry(''));
+  }
+  menu.style.left = '0'; menu.style.top = '0';
+  document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  menu.style.left = Math.min(x, window.innerWidth  - rect.width  - 4) + 'px';
+  menu.style.top  = Math.min(y, window.innerHeight - rect.height - 4) + 'px';
+  setTimeout(() => {
+    function dismiss(e) { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', dismiss, true); document.removeEventListener('touchstart', dismiss, true); } }
+    document.addEventListener('mousedown', dismiss, true);
+    document.addEventListener('touchstart', dismiss, true);
+  }, 0);
+}
+
+// ── File CRUD actions ─────────────────────────────────────────────────────────
+
+function _crudError(msg) {
+  // Reuse confirmModal as a simple alert.
+  const overlay = document.getElementById('confirm-overlay');
+  const msgEl   = document.getElementById('confirm-message');
+  const titleEl = overlay && overlay.querySelector('.confirm-title');
+  const discard = document.getElementById('confirm-discard');
+  const cancel  = document.getElementById('confirm-cancel');
+  if (!overlay) { alert(msg); return; }
+  if (titleEl) titleEl.textContent = 'Error';
+  if (msgEl) msgEl.textContent = msg;
+  if (discard) discard.style.display = 'none';
+  if (cancel) cancel.textContent = 'OK';
+  overlay.style.display = 'flex';
+  function close() {
+    overlay.style.display = 'none';
+    if (discard) discard.style.display = '';
+    if (cancel) cancel.textContent = 'Cancel';
+    cancel.removeEventListener('click', close);
+  }
+  cancel.addEventListener('click', close);
+}
+
+async function createEntry(parentDir, isDir) {
+  const name = await promptModal({
+    title: isDir ? 'New Folder' : 'New File',
+    label: 'Name',
+    confirmLabel: 'Create',
+  });
+  if (!name) return;
+  if (name.includes('/') || name === '..' || name === '.') {
+    _crudError('Invalid name.'); return;
+  }
+  const path = parentDir ? parentDir + '/' + name : name;
+  const res = await fetch('/api/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, isDir }),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    _crudError(j.error || 'Create failed.'); return;
+  }
+  await refreshTreePreservingState();
+}
+
+async function renameEntry(itemPath, isDir) {
+  const oldName = itemPath.split('/').pop();
+  const newName = await promptModal({
+    title: 'Rename',
+    label: 'New name',
+    initialValue: oldName,
+    confirmLabel: 'Rename',
+  });
+  if (!newName || newName === oldName) return;
+  if (newName.includes('/') || newName === '..' || newName === '.') {
+    _crudError('Invalid name.'); return;
+  }
+  const parent = itemPath.includes('/') ? itemPath.slice(0, itemPath.lastIndexOf('/')) : '';
+  const to = parent ? parent + '/' + newName : newName;
+  const res = await fetch('/api/rename', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: itemPath, to }),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    _crudError(j.error || 'Rename failed.'); return;
+  }
+  _updateTabsAfterRename(itemPath, to, isDir);
+  await refreshTreePreservingState();
+}
+
+async function deleteEntry(itemPath, isDir) {
+  const label = isDir ? `"${itemPath}" and all its contents` : `"${itemPath}"`;
+  const ok = await new Promise((resolve) => {
+    const overlay = document.getElementById('confirm-overlay');
+    const msgEl   = document.getElementById('confirm-message');
+    const titleEl = overlay && overlay.querySelector('.confirm-title');
+    const discard = document.getElementById('confirm-discard');
+    const cancel  = document.getElementById('confirm-cancel');
+    if (!overlay) { resolve(false); return; }
+    if (titleEl) titleEl.textContent = 'Delete';
+    if (msgEl) msgEl.textContent = `Delete ${label}?`;
+    if (discard) { discard.textContent = 'Delete'; discard.style.display = ''; }
+    overlay.style.display = 'flex';
+    function close(val) {
+      overlay.style.display = 'none';
+      if (discard) discard.textContent = 'Discard';
+      if (cancel) cancel.textContent = 'Cancel';
+      discard && discard.removeEventListener('click', onDiscard);
+      cancel && cancel.removeEventListener('click', onCancel);
+      resolve(val);
+    }
+    function onDiscard() { close(true); }
+    function onCancel()  { close(false); }
+    discard && discard.addEventListener('click', onDiscard);
+    cancel  && cancel.addEventListener('click', onCancel);
+  });
+  if (!ok) return;
+  const res = await fetch('/api/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: itemPath }),
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    _crudError(j.error || 'Delete failed.'); return;
+  }
+  _closeTabsUnder(itemPath, isDir);
+  await refreshTreePreservingState();
+}
+
+async function deleteSelectedItems() {
+  if (selectedItems.size === 0) return;
+  // If a selected folder contains another selected item, deleting the folder
+  // already covers the child; only send the top-level request.
+  const items = Array.from(selectedItems, ([path, isDir]) => ({ path, isDir }))
+    .filter(item => !Array.from(selectedItems.keys()).some(parent =>
+      parent !== item.path && item.path.startsWith(parent + '/') && selectedItems.get(parent)));
+  const ok = await confirmModal({
+    title: 'Delete selected items',
+    message: `Delete ${selectedItems.size} selected item${selectedItems.size === 1 ? '' : 's'}? This cannot be undone.`,
+    confirmLabel: 'Delete',
+    danger: true,
+  });
+  if (!ok) return;
+
+  for (const item of items) {
+    const res = await fetch('/api/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: item.path }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      await refreshTreePreservingState();
+      _crudError(body.error || `Could not delete "${item.path}".`);
+      return;
+    }
+    _closeTabsUnder(item.path, item.isDir);
+  }
+  setSelectionMode(false);
+  await refreshTreePreservingState();
+}
+
+function stageSelectedItems(mode) {
+  if (selectedItems.size === 0) return;
+  const items = Array.from(selectedItems, ([path, isDir]) => ({ path, isDir }))
+    .filter(item => !Array.from(selectedItems.keys()).some(parent =>
+      parent !== item.path && item.path.startsWith(parent + '/') && selectedItems.get(parent)));
+  clipboard = { items, mode };
+  setSelectionMode(false);
+  updateClipboardUI();
+}
+
+function cutEntry(itemPath, isDir) {
+  clipboard = { path: itemPath, isDir, mode: 'cut' };
+  updateClipboardUI();
+}
+
+function copyEntry(itemPath, isDir) {
+  clipboard = { path: itemPath, isDir, mode: 'copy' };
+  updateClipboardUI();
+}
+
+async function pasteEntry(targetDir) {
+  if (!clipboard) return;
+  if (clipboard.items) {
+    await pasteSelectedEntries(targetDir);
+    return;
+  }
+  const { path: src, isDir, mode } = clipboard;
+  let name = src.split('/').pop();
+  let dest = targetDir ? targetDir + '/' + name : name;
+  if (isDir && (dest === src || dest.startsWith(src + '/'))) {
+    _crudError('Cannot paste a folder into itself.'); return;
+  }
+  const endpoint = mode === 'cut' ? '/api/rename' : '/api/copy';
+  let res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: src, to: dest }),
+  });
+  if (res.status === 409) {
+    const newName = await promptModal({
+      title: 'Name already exists',
+      label: 'New name',
+      initialValue: name,
+      confirmLabel: mode === 'cut' ? 'Move' : 'Copy',
+    });
+    if (!newName) return;
+    if (newName.includes('/') || newName === '..' || newName === '.') {
+      _crudError('Invalid name.'); return;
+    }
+    dest = targetDir ? targetDir + '/' + newName : newName;
+    res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: src, to: dest }),
+    });
+  }
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    _crudError(j.error || 'Paste failed.');
+    return;
+  }
+  if (mode === 'cut') {
+    _updateTabsAfterRename(src, dest, isDir);
+  }
+  clipboard = null;
+  updateClipboardUI();
+  await refreshTreePreservingState();
+}
+
+async function pasteSelectedEntries(targetDir) {
+  const mode = clipboard.mode;
+  const pending = clipboard.items.slice();
+  while (pending.length) {
+    const item = pending[0];
+    let name = item.path.split('/').pop();
+    let dest = targetDir ? targetDir + '/' + name : name;
+    if (item.isDir && (targetDir === item.path || targetDir.startsWith(item.path + '/'))) {
+      _crudError('Cannot paste a folder into itself.');
+      return;
+    }
+    const endpoint = mode === 'cut' ? '/api/rename' : '/api/copy';
+    let res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: item.path, to: dest }),
+    });
+    if (res.status === 409) {
+      const newName = await promptModal({
+        title: 'Name already exists',
+        label: `New name for ${name}`,
+        initialValue: name,
+        confirmLabel: mode === 'cut' ? 'Move' : 'Copy',
+      });
+      if (!newName) return;
+      if (newName.includes('/') || newName === '.' || newName === '..') {
+        _crudError('Invalid name.'); return;
+      }
+      dest = targetDir ? targetDir + '/' + newName : newName;
+      res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: item.path, to: dest }),
+      });
+    }
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      _crudError(body.error || `Could not paste "${item.path}".`);
+      return;
+    }
+    if (mode === 'cut') _updateTabsAfterRename(item.path, dest, item.isDir);
+    pending.shift();
+    clipboard.items = pending.slice();
+    updateClipboardUI();
+  }
+  clipboard = null;
+  updateClipboardUI();
+  await refreshTreePreservingState();
+}
+
+// ── Tab bookkeeping helpers ───────────────────────────────────────────────────
+
+function _closeTabsUnder(path, isDir) {
+  const toClose = [];
+  for (const p of openFiles.keys()) {
+    if (isDir ? (p === path || p.startsWith(path + '/')) : p === path) {
+      toClose.push(p);
+    }
+  }
+  for (const p of toClose) closeTab(p);
+}
+
+function _updateTabsAfterRename(from, to, isDir) {
+  // Close affected tabs — user can reopen from new path.
+  _closeTabsUnder(from, isDir);
+}
+
 // ── Tabs ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -185,9 +1003,10 @@ async function loadRootTree() {
 function saveActiveTabContent() {
   if (activeTab && editor) {
     const file = openFiles.get(activeTab);
-    if (file) {
+    if (file && !file.isImage) {
       file.content = editor.getValue();
     }
+    if (file && !file.isImage && editor.getFoldStates) foldStates.set(activeTab, editor.getFoldStates());
   }
 }
 
@@ -196,6 +1015,8 @@ function saveActiveTabContent() {
  * @param {string} filePath
  */
 function activateTab(filePath) {
+  // Hide any change banner for the tab we're leaving.
+  if (activeTab && activeTab !== filePath) hideChangeBanner(activeTab);
   // Save content of current tab before leaving it.
   saveActiveTabContent();
 
@@ -244,6 +1065,29 @@ function createTab(filePath) {
   tab.dataset.path = filePath;
   tab.title = filePath;
 
+  // File icon (same logic as explorer tree).
+  const badge = badgeForFile(name, false);
+  const iconPath = badge.icon && window.FILE_ICON_PATHS && window.FILE_ICON_PATHS[badge.icon];
+  const iconEl = document.createElement('span');
+  if (badge.svg) {
+    iconEl.className = 'file-logo tab-icon';
+    iconEl.style.color = badge.color;
+    iconEl.innerHTML =
+      '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" aria-hidden="true">' +
+      badge.svg + '</svg>';
+  } else if (iconPath) {
+    iconEl.className = 'file-logo tab-icon';
+    iconEl.style.color = badge.color;
+    iconEl.innerHTML =
+      '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">' +
+      '<path d="' + iconPath + '" fill="currentColor"/></svg>';
+  } else {
+    iconEl.className = 'tab-badge';
+    iconEl.style.color = badge.color;
+    iconEl.style.opacity = '0.75';
+    iconEl.textContent = badge.label || '';
+  }
+
   const label = document.createElement('span');
   label.className = 'tab-label';
   label.textContent = name;
@@ -257,6 +1101,7 @@ function createTab(filePath) {
     closeTab(filePath);
   });
 
+  tab.appendChild(iconEl);
   tab.appendChild(label);
   tab.appendChild(closeBtn);
   tab.addEventListener('click', () => activateTab(filePath));
@@ -280,6 +1125,16 @@ function updateTabDirty(filePath) {
 }
 
 /**
+ * Normalize text for dirty comparison: unify line endings and strip a single
+ * trailing newline, which the contenteditable round-trip does not preserve.
+ * @param {string} s
+ * @returns {string}
+ */
+function normalizeForCompare(s) {
+  return s.replace(/\r\n/g, '\n').replace(/\n$/, '');
+}
+
+/**
  * Update dirty state for the given path based on current text.
  * @param {string} filePath
  * @param {string} text
@@ -288,8 +1143,48 @@ function updateDirtyState(filePath, text) {
   const file = openFiles.get(filePath);
   if (!file) return;
   file.content = text;
-  file.dirty = (text !== file.savedContent);
+  file.dirty = normalizeForCompare(text) !== normalizeForCompare(file.savedContent);
   updateTabDirty(filePath);
+}
+
+/**
+ * Show a generic confirm modal (reuses #confirm-overlay infrastructure).
+ * @param {{title:string, message:string, confirmLabel:string, danger?:boolean}} opts
+ * @returns {Promise<boolean>}
+ */
+function confirmModal({ title, message, confirmLabel, danger }) {
+  const overlay = document.getElementById('confirm-overlay');
+  const titleEl = overlay.querySelector('.confirm-title');
+  const msg = document.getElementById('confirm-message');
+  const btnConfirm = document.getElementById('confirm-discard');
+  const btnCancel = document.getElementById('confirm-cancel');
+  if (titleEl) titleEl.textContent = title;
+  msg.textContent = message;
+  btnConfirm.textContent = confirmLabel;
+  btnConfirm.className = 'confirm-btn' + (danger !== false ? ' danger' : '');
+  overlay.style.display = 'flex';
+  return new Promise((resolve) => {
+    function cleanup(result) {
+      overlay.style.display = 'none';
+      btnConfirm.textContent = 'Discard';
+      btnConfirm.className = 'confirm-btn danger';
+      if (titleEl) titleEl.textContent = 'Unsaved changes';
+      btnConfirm.removeEventListener('click', onConfirm);
+      btnCancel.removeEventListener('click', onCancel);
+      overlay.removeEventListener('mousedown', onBackdrop);
+      document.removeEventListener('keydown', onKey);
+      resolve(result);
+    }
+    function onConfirm() { cleanup(true); }
+    function onCancel() { cleanup(false); }
+    function onBackdrop(e) { if (e.target === overlay) cleanup(false); }
+    function onKey(e) { if (e.key === 'Escape') cleanup(false); }
+    btnConfirm.addEventListener('click', onConfirm);
+    btnCancel.addEventListener('click', onCancel);
+    overlay.addEventListener('mousedown', onBackdrop);
+    document.addEventListener('keydown', onKey);
+    if (!navigator.maxTouchPoints) btnConfirm.focus();
+  });
 }
 
 /**
@@ -299,6 +1194,19 @@ async function saveCurrentFile() {
   if (!activeTab || !editor) return;
   const filePath = activeTab;
   const content = editor.getValue();
+
+  // Warn if user dismissed an external-change notification without reloading.
+  const fileState = openFiles.get(filePath);
+  if (fileState && fileState.externalChangePending) {
+    const name = filePath.split('/').pop();
+    const ok = await confirmModal({
+      title: 'File changed on disk',
+      message: '"' + name + '" was changed on disk. Overwrite the disk version with your edits?',
+      confirmLabel: 'Overwrite',
+      danger: true,
+    });
+    if (!ok) return;
+  }
 
   try {
     const res = await fetch('/api/file?path=' + encodeURIComponent(filePath), {
@@ -322,6 +1230,8 @@ async function saveCurrentFile() {
       file.savedContent = content;
       file.content = content;
       file.dirty = false;
+      file.diskMtime = res.headers.get('X-File-Mtime') || file.diskMtime;
+      file.externalChangePending = false;
       updateTabDirty(filePath);
     }
   } catch (e) {
@@ -330,10 +1240,55 @@ async function saveCurrentFile() {
 }
 
 /**
+ * Show a Discard / Cancel modal for a file with unsaved changes.
+ * Resolves true if the user chose Discard, false if Cancel/backdrop/Escape.
+ * @param {string} fileName
+ * @returns {Promise<boolean>}
+ */
+function confirmDiscard(fileName) {
+  const overlay = document.getElementById('confirm-overlay');
+  const msg = document.getElementById('confirm-message');
+  const btnDiscard = document.getElementById('confirm-discard');
+  const btnCancel = document.getElementById('confirm-cancel');
+  msg.textContent = '"' + fileName + '" has unsaved changes. Discard them?';
+  overlay.style.display = 'flex';
+  return new Promise((resolve) => {
+    function cleanup(result) {
+      overlay.style.display = 'none';
+      btnDiscard.removeEventListener('click', onDiscard);
+      btnCancel.removeEventListener('click', onCancel);
+      overlay.removeEventListener('mousedown', onBackdrop);
+      document.removeEventListener('keydown', onKey);
+      resolve(result);
+    }
+    function onDiscard() { cleanup(true); }
+    function onCancel() { cleanup(false); }
+    function onBackdrop(e) { if (e.target === overlay) cleanup(false); }
+    function onKey(e) { if (e.key === 'Escape') cleanup(false); }
+    btnDiscard.addEventListener('click', onDiscard);
+    btnCancel.addEventListener('click', onCancel);
+    overlay.addEventListener('mousedown', onBackdrop);
+    document.addEventListener('keydown', onKey);
+    if (!navigator.maxTouchPoints) btnDiscard.focus();
+  });
+}
+
+/**
  * Close a tab.
  * @param {string} filePath
  */
-function closeTab(filePath) {
+async function closeTab(filePath) {
+  const file = openFiles.get(filePath);
+  // Sync editor text into dirty state before checking, if this is the active tab.
+  // Images have no editor text or savedContent to compare.
+  if (activeTab === filePath && file && !file.isImage && editor) {
+    updateDirtyState(filePath, editor.getValue());
+  }
+  if (file && file.dirty) {
+    const name = filePath.split('/').pop();
+    const ok = await confirmDiscard(name);
+    if (!ok) return;
+  }
   // Save content before closing, in case we switch to another tab.
   if (activeTab === filePath) {
     saveActiveTabContent();
@@ -376,17 +1331,46 @@ function closeTab(filePath) {
  */
 function showContent(filePath, content) {
   welcome.style.display = 'none';
-  editorContainer.style.display = 'block';
+  const _sb = document.getElementById('status-bar');
+  if (_sb) _sb.style.display = '';
   statusPath.textContent = filePath;
-
+  if (updateRunButton) updateRunButton();
+  const imgBox = document.getElementById('image-preview');
+  const rec = openFiles.get(filePath);
+  if (rec && rec.isImage) {
+    editorContainer.style.display = 'none';
+    imgBox.style.display = 'flex';
+    imgBox.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = '/api/raw?path=' + encodeURIComponent(filePath);
+    img.alt = filePath;
+    imgBox.appendChild(img);
+    return;
+  }
+  if (imgBox) imgBox.style.display = 'none';
+  editorContainer.style.display = 'block';
   const lang = langFromPath(filePath);
   editor.setValue(content, lang);
+  if (editor.isLargeFileMode && editor.isLargeFileMode()) {
+    statusPath.textContent = filePath + '  [large file mode · session backup off]';
+  }
+  // Restore fold state for this file (setValue clears folds via fresh render).
+  const folds = foldStates.get(filePath);
+  if (folds && editor.setFoldStates) editor.setFoldStates(folds);
 }
 
 function showWelcome() {
+  const _sb = document.getElementById('status-bar');
+  if (_sb) _sb.style.display = 'none';
+  const imgBox = document.getElementById('image-preview');
+  if (imgBox) {
+    imgBox.style.display = 'none';
+    imgBox.innerHTML = '';
+  }
   editorContainer.style.display = 'none';
   welcome.style.display = 'flex';
   statusPath.textContent = '';
+  if (updateRunButton) updateRunButton();
 }
 
 // ── File open ─────────────────────────────────────────────────────────────────
@@ -403,6 +1387,15 @@ async function openFile(filePath, treeRow) {
     return;
   }
 
+  // Images are served as binary — use the raw endpoint via <img src> instead.
+  if (isImagePath(filePath)) {
+    openFiles.set(filePath, { content: null, isImage: true, dirty: false, savedContent: null, diskMtime: null, externalChangePending: false });
+    activateTab(filePath);
+    if (window._closeSidebarIfMobile) window._closeSidebarIfMobile();
+    if (treeRow) treeRow.style.opacity = '';
+    return;
+  }
+
   if (treeRow) treeRow.style.opacity = '0.5';
 
   try {
@@ -416,8 +1409,9 @@ async function openFile(filePath, treeRow) {
       alert('Cannot open file: ' + msg);
       return;
     }
+    const diskMtime = res.headers.get('X-File-Mtime');
     const content = await res.text();
-    openFiles.set(filePath, { content, dirty: false, savedContent: content });
+    openFiles.set(filePath, { content, dirty: false, savedContent: content, diskMtime, externalChangePending: false });
     activateTab(filePath);
     if (window._closeSidebarIfMobile) window._closeSidebarIfMobile();
   } catch (e) {
@@ -428,6 +1422,101 @@ async function openFile(filePath, treeRow) {
   }
 }
 
+// ── External file-change detection ───────────────────────────────────────────
+
+/**
+ * Show the amber change-banner for the given file with pre-fetched disk content.
+ * @param {string} filePath
+ * @param {string} diskContent
+ * @param {string} mtime
+ */
+function showChangeBanner(filePath, diskContent, mtime) {
+  const banner = document.getElementById('change-banner');
+  const msg = document.getElementById('change-banner-msg');
+  const btnReload = document.getElementById('change-banner-reload');
+  const btnDismiss = document.getElementById('change-banner-dismiss');
+  if (!banner) return;
+
+  const name = filePath.split('/').pop();
+  msg.textContent = '"' + name + '" changed on disk.';
+  _bannerPath = filePath;
+  banner.classList.add('visible');
+
+  // Clone buttons to drop any previous listeners.
+  const newReload = btnReload.cloneNode(true);
+  const newDismiss = btnDismiss.cloneNode(true);
+  btnReload.replaceWith(newReload);
+  btnDismiss.replaceWith(newDismiss);
+
+  newReload.addEventListener('click', () => {
+    const file = openFiles.get(filePath);
+    if (file) {
+      file.content = diskContent;
+      file.savedContent = diskContent;
+      file.dirty = false;
+      file.diskMtime = mtime;
+      file.externalChangePending = false;
+      if (activeTab === filePath) showContent(filePath, diskContent);
+      updateTabDirty(filePath);
+    }
+    banner.classList.remove('visible');
+    _bannerPath = null;
+  });
+
+  newDismiss.addEventListener('click', () => {
+    const file = openFiles.get(filePath);
+    if (file) {
+      file.diskMtime = mtime;
+      file.externalChangePending = true;
+    }
+    banner.classList.remove('visible');
+    _bannerPath = null;
+  });
+}
+
+/**
+ * Hide the change-banner if it's showing for the given path (or any path).
+ * @param {string} [filePath]
+ */
+function hideChangeBanner(filePath) {
+  if (filePath === undefined || _bannerPath === filePath) {
+    const banner = document.getElementById('change-banner');
+    if (banner) banner.classList.remove('visible');
+    _bannerPath = null;
+  }
+}
+
+/**
+ * On window focus, check if the active file was modified on disk since we loaded it.
+ */
+async function checkActiveFileForExternalChange() {
+  if (!activeTab || _changeCheckInFlight) return;
+  const file = openFiles.get(activeTab);
+  if (!file) return;
+  _changeCheckInFlight = true;
+  try {
+    const res = await fetch('/api/file?path=' + encodeURIComponent(activeTab));
+    if (!res.ok) return;
+    const mtime = res.headers.get('X-File-Mtime');
+    if (!file.diskMtime) {
+      // No baseline (e.g. restored session) — adopt silently.
+      file.diskMtime = mtime;
+      return;
+    }
+    if (mtime && mtime !== file.diskMtime) {
+      // File changed on disk — only show banner if not already showing for this file.
+      if (_bannerPath !== activeTab) {
+        const diskContent = await res.text();
+        showChangeBanner(activeTab, diskContent, mtime);
+      }
+    }
+  } catch (_) {
+    // Network error — ignore silently.
+  } finally {
+    _changeCheckInFlight = false;
+  }
+}
+
 // ── Session persistence ───────────────────────────────────────────────────────
 
 /**
@@ -435,15 +1524,27 @@ async function openFile(filePath, treeRow) {
  */
 function saveSession() {
   const tabs = [];
+  const retainedPaths = new Set();
+  const MAX_CLEAN_SESSION_CHARS = 1024 * 1024;
   for (const [path, file] of openFiles) {
-    tabs.push({ path, content: file.content, savedContent: file.savedContent, dirty: file.dirty });
+    const contentLength = typeof file.content === 'string' ? file.content.length : 0;
+    // Large files stay in memory while the app is open but are never copied
+    // into session.json; serializing them can freeze the browser main thread.
+    if (contentLength > MAX_CLEAN_SESSION_CHARS) continue;
+    tabs.push({ path, content: file.content, savedContent: file.savedContent, dirty: file.dirty, isImage: !!file.isImage });
+    retainedPaths.add(path);
   }
   const caretPositions = {};
-  if (activeTab) {
+  if (activeTab && retainedPaths.has(activeTab)) {
     const pos = editor.getCaretOffset();
     if (pos) caretPositions[activeTab] = pos;
+    // Capture live fold state of the active tab.
+    if (editor.getFoldStates) foldStates.set(activeTab, editor.getFoldStates());
   }
-  const session = { openTabs: tabs, activeTab, caretPositions };
+  const foldStatesObj = {};
+  for (const [p, f] of foldStates) if (retainedPaths.has(p) && f && f.length) foldStatesObj[p] = f;
+  const sessionActiveTab = retainedPaths.has(activeTab) ? activeTab : (tabs[0]?.path || null);
+  const session = { openTabs: tabs, activeTab: sessionActiveTab, caretPositions, foldStates: foldStatesObj };
   fetch('/api/session', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -472,18 +1573,48 @@ async function loadSession() {
     const res = await fetch('/api/session');
     const session = await res.json();
     if (!session.openTabs || session.openTabs.length === 0) return false;
+    // Rendering/highlighting a multi-megabyte file during startup can block the
+    // main thread before basic UI such as Explorer becomes interactive.
+    const MAX_AUTO_RESTORE_CHARS = 1024 * 1024;
     for (const tab of session.openTabs) {
-      openFiles.set(tab.path, { content: tab.content, savedContent: tab.savedContent, dirty: tab.dirty });
+      const content = typeof tab.content === 'string' ? tab.content : '';
+      const savedContent = typeof tab.savedContent === 'string' ? tab.savedContent : '';
+      const dirty = typeof tab.dirty === 'boolean'
+        ? tab.dirty
+        : normalizeForCompare(content) !== normalizeForCompare(savedContent);
+      // Clean oversized files are safe to reopen from disk and are removed
+      // from the next saved session. Never drop dirty unsaved content.
+      if (!dirty && content.length > MAX_AUTO_RESTORE_CHARS) continue;
+      openFiles.set(tab.path, { content, savedContent, dirty, isImage: !!tab.isImage || isImagePath(tab.path), diskMtime: null, externalChangePending: false });
       // Add the tab element to the tab bar (without activating).
       const tabEl = createTab(tab.path);
       tabBar.appendChild(tabEl);
     }
-    const toActivate = session.activeTab || session.openTabs[0].path;
+    // Restore per-file fold states before activating (showContent reads foldStates).
+    if (session.foldStates) {
+      for (const [p, f] of Object.entries(session.foldStates)) foldStates.set(p, f);
+    }
+    if (openFiles.size === 0) {
+      scheduleSaveSession();
+      return false;
+    }
+    const preferred = session.activeTab || openFiles.keys().next().value;
+    const preferredFile = openFiles.get(preferred);
+    const fallbackTab = Array.from(openFiles.keys())[0];
+    const toActivate = preferredFile && preferredFile.content.length <= MAX_AUTO_RESTORE_CHARS
+      ? preferred
+      : fallbackTab;
+    if (!toActivate) {
+      showWelcome();
+      return true;
+    }
     activateTab(toActivate);
     if (session.caretPositions && session.caretPositions[toActivate]) {
       const { anchor, focus } = session.caretPositions[toActivate];
       setTimeout(() => editor.setCaretOffset(anchor, focus), 50);
     }
+    // Rewrites oversized sessions into the cleaned .coded format.
+    scheduleSaveSession();
     return true;
   } catch (e) {
     return false;
@@ -497,14 +1628,53 @@ function init() {
   editor = Editor.init(editorContainer);
   window.editor = editor;
 
+  // Cross-file autocomplete: expose other open tabs' contents to the engine.
+  window.acExtraText = function() {
+    const out = [];
+    for (const [path, file] of openFiles) {
+      if (path !== activeTab && !file.isImage && typeof file.content === 'string') {
+        out.push(file.content);
+      }
+    }
+    return out;
+  };
+
+  // Undo/Redo buttons.
+  const btnUndo = document.getElementById('btn-undo');
+  const btnRedo = document.getElementById('btn-redo');
+
+  function refreshUndoButtons() {
+    if (btnUndo) btnUndo.disabled = !editor.canUndo();
+    if (btnRedo) btnRedo.disabled = !editor.canRedo();
+  }
+
+  if (btnUndo) btnUndo.addEventListener('click', () => { editor.undo(); refreshUndoButtons(); });
+  if (btnRedo) btnRedo.addEventListener('click', () => { editor.redo(); refreshUndoButtons(); });
+
+  // Search button → open search modal.
+  const btnSearch = document.getElementById('btn-search');
+  if (btnSearch) btnSearch.addEventListener('click', () => { if (window.Search) Search.openSearchModal(); });
+
+  // Also refresh after keyboard undo/redo (editor fires onUndoRedoChange).
+  editor.onUndoRedoChange = refreshUndoButtons;
+
   // Wire up dirty-state tracking on every editor change.
   editor.onchange = (text) => {
     if (activeTab) {
-      updateDirtyState(activeTab, text);
-      // Keep in-memory content current for session saves.
-      openFiles.get(activeTab).content = text;
-      scheduleSaveSession();
+      const file = openFiles.get(activeTab);
+      if (editor.isLargeFileMode && editor.isLargeFileMode()) {
+        // Avoid normalizing and comparing the entire file after every keypress.
+        file.content = text;
+        if (!file.dirty) {
+          file.dirty = true;
+          updateTabDirty(activeTab);
+        }
+      } else {
+        updateDirtyState(activeTab, text);
+        scheduleSaveSession();
+      }
     }
+    refreshUndoButtons();
   };
 
   // Ctrl+S / Cmd+S to save.
@@ -524,12 +1694,12 @@ function init() {
       }
       if (!e.shiftKey && e.key === 'f') {
         e.preventDefault();
-        if (window.Search) Search.openFind();
+        if (window.Search) Search.openSearchModal();
         return;
       }
       if (!e.shiftKey && e.key === 'h') {
         e.preventDefault();
-        if (window.Search) Search.openFindReplace();
+        if (window.Search) Search.openSearchModal();
         return;
       }
       if (!e.shiftKey && e.key === 'p') {
@@ -543,6 +1713,14 @@ function init() {
         return;
       }
     }
+    // Explorer Cut/Copy/Paste — only when not in editor or input field.
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey &&
+        !e.target.closest('#editor-container, input, textarea, [contenteditable]')) {
+      const s = _selectedRow();
+      if (e.key === 'c' && s) { e.preventDefault(); copyEntry(s.path, s.isDir); }
+      else if (e.key === 'x' && s) { e.preventDefault(); cutEntry(s.path, s.isDir); }
+      else if (e.key === 'v' && clipboard) { e.preventDefault(); pasteEntry(_pasteTargetDir()); }
+    }
   });
 
   // Sidebar drawer: toggle, close button, backdrop tap.
@@ -550,10 +1728,18 @@ function init() {
   const sidebar = document.getElementById('sidebar');
   const backdrop = document.getElementById('sidebar-backdrop');
   const btnSidebarClose = document.getElementById('btn-sidebar-close');
+  const btnSelectionToggle = document.getElementById('btn-selection-toggle');
+  const btnSelectAll = document.getElementById('btn-select-all');
+  const btnDeleteSelected = document.getElementById('btn-delete-selected');
+  const btnCopySelected = document.getElementById('btn-copy-selected');
+  const btnMoveSelected = document.getElementById('btn-move-selected');
+  const btnClipboardCancel = document.getElementById('btn-clipboard-cancel');
 
   function openSidebar() {
     sidebar.classList.remove('hidden');
     backdrop.classList.remove('hidden');
+    // Open immediately; refresh only after the drawer has painted.
+    setTimeout(syncExplorerOnce, 220);
   }
   function closeSidebar() {
     sidebar.classList.add('hidden');
@@ -565,15 +1751,326 @@ function init() {
   });
   if (btnSidebarClose) btnSidebarClose.addEventListener('click', closeSidebar);
   if (backdrop) backdrop.addEventListener('click', closeSidebar);
+  if (btnSelectionToggle) btnSelectionToggle.addEventListener('click', () => setSelectionMode(!selectionMode));
+  if (btnSelectAll) btnSelectAll.addEventListener('click', () => {
+    const rows = Array.from(fileTree.querySelectorAll('.tree-item'));
+    const allSelected = rows.length > 0 && rows.every(row => selectedItems.has(row.dataset.path));
+    rows.forEach(row => {
+      const path = row.dataset.path;
+      if (allSelected) {
+        selectedItems.delete(path);
+        row.classList.remove('multi-selected');
+      } else {
+        selectedItems.set(path, row.dataset.isdir === '1');
+        row.classList.add('multi-selected');
+      }
+    });
+    updateSelectionUI();
+  });
+  if (btnDeleteSelected) btnDeleteSelected.addEventListener('click', deleteSelectedItems);
+  if (btnCopySelected) btnCopySelected.addEventListener('click', () => stageSelectedItems('copy'));
+  if (btnMoveSelected) btnMoveSelected.addEventListener('click', () => stageSelectedItems('cut'));
+  if (btnClipboardCancel) btnClipboardCancel.addEventListener('click', () => {
+    clipboard = null;
+    updateClipboardUI();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && !sidebar.classList.contains('hidden')) syncExplorerOnce();
+  });
+
+  // Helpers for keyboard shortcuts and paste target resolution.
+  function _selectedRow() {
+    const el = fileTree.querySelector('.tree-item.selected');
+    return el ? { path: el.dataset.path, isDir: el.dataset.isdir === '1' } : null;
+  }
+  function _pasteTargetDir() {
+    const s = _selectedRow();
+    if (!s) return '';
+    return s.isDir ? s.path : (s.path.includes('/') ? s.path.slice(0, s.path.lastIndexOf('/')) : '');
+  }
+
+  // Right-click / long-press on empty tree space → create at root.
+  fileTree.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('.tree-item')) return; // handled by row
+    e.preventDefault();
+    showRootContextMenu(e.clientX, e.clientY);
+  });
+  let _bgLpTimer = null;
+  fileTree.addEventListener('touchstart', (e) => {
+    if (e.target.closest('.tree-item')) return;
+    _bgLpTimer = setTimeout(() => {
+      _bgLpTimer = null;
+      const t = e.touches[0];
+      showRootContextMenu(t.clientX, t.clientY);
+    }, 500);
+  }, { passive: true });
+  fileTree.addEventListener('touchmove',  () => { clearTimeout(_bgLpTimer); _bgLpTimer = null; }, { passive: true });
+  fileTree.addEventListener('touchend',   () => { clearTimeout(_bgLpTimer); _bgLpTimer = null; }, { passive: true });
 
   // Close sidebar after opening a file on mobile (small screens).
   window._closeSidebarIfMobile = () => { if (window.innerWidth < 768) closeSidebar(); };
 
-  // Word-wrap toggle button.
-  const btnWrap = document.getElementById('btn-wrap');
-  if (btnWrap) {
-    btnWrap.addEventListener('click', () => editor.toggleWrap());
+  // Persist folds whenever the user toggles one via gutter/pill.
+  editor.onfoldchange = () => {
+    if (activeTab && editor.getFoldStates) {
+      foldStates.set(activeTab, editor.getFoldStates());
+      scheduleSaveSession();
+    }
+  };
+
+
+  // Save button (phones have no Ctrl+S).
+  const btnSave = document.getElementById('btn-save');
+  if (btnSave) {
+    btnSave.addEventListener('click', () => saveCurrentFile());
   }
+
+  // Run button — only visible for HTML files.
+  const btnRun = document.getElementById('btn-run');
+  if (btnRun) {
+    btnRun.addEventListener('click', async () => {
+      if (!activeTab) return;
+      // Auto-save so the on-disk file matches the editor before previewing.
+      await saveCurrentFile();
+
+      // Markdown: render to styled HTML and open in a new tab.
+      if (isMdPath(activeTab)) {
+        if (!window.marked) { alert('Markdown renderer not loaded.'); return; }
+        const file = openFiles.get(activeTab);
+        const src = (editor && file && !file.isImage) ? editor.getValue() : (file && file.content) || '';
+        const rendered = new DOMParser().parseFromString(marked.parse(src), 'text/html');
+        const headingIds = new Map();
+        rendered.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(heading => {
+          const baseId = heading.textContent.trim().toLowerCase()
+            .replace(/[^\p{L}\p{N}\s-]/gu, '')
+            .replace(/\s+/g, '-')
+            .replace(/-+/g, '-');
+          const count = headingIds.get(baseId) || 0;
+          headingIds.set(baseId, count + 1);
+          heading.id = count ? `${baseId}-${count}` : baseId;
+        });
+        const body = rendered.body.innerHTML;
+        // A blob document cannot reliably resolve a root-relative <base> URL.
+        // Use an absolute preview-server URL so images and links resolve from
+        // the Markdown file's directory instead of from the blob URL.
+        const dir = activeTab.includes('/') ? activeTab.slice(0, activeTab.lastIndexOf('/') + 1) : '';
+        const previewDir = '/preview/' + dir.split('/').map(encodeURIComponent).join('/');
+        const baseHref = new URL(previewDir, window.location.href).href;
+        const doc = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+          '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+          '<title>' + activeTab.split('/').pop() + '</title>' +
+          '<base href="' + baseHref + '">' +
+          '<style>' +
+          'body{max-width:860px;margin:0 auto;padding:24px 20px;background:#1e1e1e;color:#d4d4d4;' +
+          'font:16px/1.7 -apple-system,"Segoe UI",Roboto,sans-serif;}' +
+          'h1,h2,h3,h4{color:#fff;line-height:1.3;margin:1.4em 0 0.5em;}' +
+          'h1{border-bottom:1px solid #3c3c3c;padding-bottom:8px;}' +
+          'h2{border-bottom:1px solid #2d2d2d;padding-bottom:6px;}' +
+          'a{color:#4fc1ff;text-decoration:none;} a:hover{text-decoration:underline;}' +
+          'code{background:#2d2d2d;padding:2px 6px;border-radius:3px;font-family:"Fira Code","Consolas",monospace;font-size:0.9em;}' +
+          'pre{background:#252526;border:1px solid #3c3c3c;border-radius:4px;padding:14px;overflow-x:auto;}' +
+          'pre code{background:none;padding:0;}' +
+          'blockquote{border-left:3px solid #4fc1ff;margin:1em 0;padding:2px 16px;color:#9da5b0;}' +
+          'table{border-collapse:collapse;width:100%;margin:1em 0;}' +
+          'th,td{border:1px solid #3c3c3c;padding:8px 12px;text-align:left;}' +
+          'th{background:#252526;} tr:nth-child(even){background:#232323;}' +
+          'img{max-width:100%;} hr{border:none;border-top:1px solid #3c3c3c;margin:2em 0;}' +
+          'ul,ol{padding-left:24px;}' +
+          '</style></head><body>' + body +
+          '<script>document.addEventListener("click",function(e){' +
+          'var a=e.target.closest("a[href^=\\\"#\\\"]");if(!a)return;' +
+          'var target=document.getElementById(decodeURIComponent(a.getAttribute("href").slice(1)));' +
+          'if(target){e.preventDefault();target.scrollIntoView({behavior:"smooth"});}});<\/script>' +
+          '</body></html>';
+        const blob = new Blob([doc], { type: 'text/html' });
+        window.open(URL.createObjectURL(blob), '_blank');
+        return;
+      }
+
+      // HTML: open via the live static server — relative imports (CSS, JS,
+      // images) resolve naturally at any depth without any URL rewriting.
+      const url = '/preview/' + activeTab.split('/').map(encodeURIComponent).join('/');
+      window.open(url, '_blank');
+    });
+  }
+  updateRunButton = function() {
+    if (!btnRun) return;
+    btnRun.style.display = (activeTab && (isHtmlPath(activeTab) || isMdPath(activeTab))) ? '' : 'none';
+  };
+
+  // ── Settings modal ──────────────────────────────────────────────────────────
+  const settingsOverlay = document.getElementById('settings-overlay');
+  const btnSettings = document.getElementById('btn-settings');
+
+  function openSettings() { if (settingsOverlay) settingsOverlay.style.display = 'flex'; }
+  function closeSettings() { if (settingsOverlay) settingsOverlay.style.display = 'none'; }
+
+  if (btnSettings) btnSettings.addEventListener('click', openSettings);
+  if (settingsOverlay) {
+    settingsOverlay.addEventListener('mousedown', (e) => { if (e.target === settingsOverlay) closeSettings(); });
+    settingsOverlay.addEventListener('touchend', (e) => { if (e.target === settingsOverlay) closeSettings(); });
+  }
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSettings(); });
+
+  // Font size controls.
+  const FONT_MIN = 8, FONT_MAX = 24, FONT_DEFAULT = 12;
+  const fontSizeValue = document.getElementById('font-size-value');
+  function applyFontSize(px) {
+    px = Math.max(FONT_MIN, Math.min(FONT_MAX, px));
+    document.documentElement.style.setProperty('--editor-font-size', px + 'px');
+    if (fontSizeValue) fontSizeValue.textContent = px + 'px';
+    try { localStorage.setItem('editorFontSize', String(px)); } catch (e) { /* private mode */ }
+    if (typeof editor !== 'undefined') editor.refreshGutter();
+    return px;
+  }
+  let fontSize = FONT_DEFAULT;
+  try {
+    const stored = parseInt(localStorage.getItem('editorFontSize'), 10);
+    if (!isNaN(stored)) fontSize = stored;
+  } catch (e) { /* private mode */ }
+  fontSize = applyFontSize(fontSize);
+  const btnFontDec = document.getElementById('btn-font-dec');
+  const btnFontInc = document.getElementById('btn-font-inc');
+  if (btnFontDec) btnFontDec.addEventListener('click', () => { fontSize = applyFontSize(fontSize - 1); });
+  if (btnFontInc) btnFontInc.addEventListener('click', () => { fontSize = applyFontSize(fontSize + 1); });
+
+  // Line height controls.
+  const LH_MIN = 1.0, LH_MAX = 2.4, LH_STEP = 0.1, LH_DEFAULT = 1.6;
+  const lineHeightValue = document.getElementById('line-height-value');
+  function applyLineHeight(v) {
+    v = Math.round(Math.max(LH_MIN, Math.min(LH_MAX, v)) * 10) / 10;
+    document.documentElement.style.setProperty('--editor-line-height', String(v));
+    if (lineHeightValue) lineHeightValue.textContent = v.toFixed(1);
+    try { localStorage.setItem('editorLineHeight', String(v)); } catch (e) { /* private mode */ }
+    if (typeof editor !== 'undefined') editor.refreshGutter();
+    return v;
+  }
+  let lineHeight = LH_DEFAULT;
+  try {
+    const stored = parseFloat(localStorage.getItem('editorLineHeight'));
+    if (!isNaN(stored)) lineHeight = stored;
+  } catch (e) { /* private mode */ }
+  lineHeight = applyLineHeight(lineHeight);
+  const btnLhDec = document.getElementById('btn-lh-dec');
+  const btnLhInc = document.getElementById('btn-lh-inc');
+  if (btnLhDec) btnLhDec.addEventListener('click', () => { lineHeight = applyLineHeight(lineHeight - LH_STEP); });
+  if (btnLhInc) btnLhInc.addEventListener('click', () => { lineHeight = applyLineHeight(lineHeight + LH_STEP); });
+
+  // ── Theme selector ───────────────────────────────────────────────────────
+  const THEME_DEFAULT = 'monokai';
+  const VALID_THEMES = ['monokai', 'pastel-on-dark', 'dracula', 'one-dark', 'catppuccin-mocha', 'catppuccin-macchiato', 'catppuccin-frappe', 'catppuccin-latte'];
+  const themeSelect = document.getElementById('theme-select');
+  function applyTheme(name) {
+    if (!VALID_THEMES.includes(name)) name = THEME_DEFAULT;
+    document.documentElement.setAttribute('data-theme', name);
+    if (themeSelect) themeSelect.value = name;
+    try { localStorage.setItem('editorTheme', name); } catch (e) { /* private mode */ }
+    return name;
+  }
+  let theme = THEME_DEFAULT;
+  try {
+    const stored = localStorage.getItem('editorTheme');
+    if (stored) theme = stored;
+  } catch (e) { /* private mode */ }
+  applyTheme(theme);
+  if (themeSelect) themeSelect.addEventListener('change', () => applyTheme(themeSelect.value));
+
+  // ── Editor font selector ────────────────────────────────────────────────────
+  const FONT_STACKS = {
+    'fira-code':       "'Fira Code V', 'Consolas', 'Menlo', monospace",
+    'jetbrains-mono':  "'JetBrains Mono V', 'Consolas', 'Menlo', monospace",
+    'cascadia-code':   "'Cascadia Code V', 'Consolas', 'Menlo', monospace",
+    'geist-mono':      "'Geist Mono', 'Consolas', 'Menlo', monospace",
+    'source-code-pro': "'Source Code Pro V', 'Consolas', 'Menlo', monospace",
+    'ibm-plex-mono':   "'IBM Plex Mono V', 'Consolas', 'Menlo', monospace",
+  };
+  const fontSelect = document.getElementById('font-select');
+  function applyFont(name) {
+    if (!FONT_STACKS[name]) name = 'fira-code';
+    document.documentElement.style.setProperty('--editor-font', FONT_STACKS[name]);
+    if (fontSelect) fontSelect.value = name;
+    try { localStorage.setItem('editorFont', name); } catch (e) { /* private mode */ }
+    if (editor && editor.refreshGutter) editor.refreshGutter();
+    return name;
+  }
+  let fontChoice = 'fira-code';
+  try {
+    const storedFont = localStorage.getItem('editorFont');
+    if (storedFont) fontChoice = storedFont;
+  } catch (e) { /* private mode */ }
+  applyFont(fontChoice);
+  if (fontSelect) fontSelect.addEventListener('change', () => applyFont(fontSelect.value));
+
+  // ── Server connection indicator ───────────────────────────────────────────
+  const statusConn = document.getElementById('status-conn');
+  let _serverOnline = true;
+
+  const statusBar = document.getElementById('status-bar');
+  const offlineOverlay = document.getElementById('offline-overlay');
+  const offlineDismiss = document.getElementById('offline-dismiss');
+  let _offlineDismissed = false;
+
+  if (offlineDismiss) offlineDismiss.addEventListener('click', () => {
+    _offlineDismissed = true;
+    if (offlineOverlay) offlineOverlay.style.display = 'none';
+  });
+
+  function setConnState(online) {
+    if (online === _serverOnline && statusConn.textContent !== '') return;
+    _serverOnline = online;
+    if (statusBar) statusBar.classList.toggle('offline', !online);
+    if (statusConn) statusConn.textContent = '⚠ Server disconnected — edits will not save';
+    const btnSave = document.getElementById('btn-save');
+    if (btnSave) btnSave.disabled = !online;
+    if (offlineOverlay) {
+      if (!online && !_offlineDismissed) {
+        offlineOverlay.style.display = 'flex';
+      } else if (online) {
+        offlineOverlay.style.display = 'none';
+        _offlineDismissed = false; // reset so modal shows again on next disconnect
+      }
+    }
+  }
+
+  async function pingServer() {
+    try {
+      const r = await fetch('/api/files?path=', { method: 'HEAD', cache: 'no-store' });
+      setConnState(r.ok || r.status === 405); // 405 = method not allowed but server alive
+    } catch (_) {
+      setConnState(false);
+    }
+  }
+
+  pingServer();
+  setInterval(pingServer, 5000);
+
+  // Focus-based external file-change detection.
+  window.addEventListener('focus', checkActiveFileForExternalChange);
+
+  // ── Show hidden files toggle ─────────────────────────────────────────────
+  const btnHiddenToggle = document.getElementById('btn-hidden-toggle');
+  try {
+    if (localStorage.getItem('showHiddenFiles') === '1') showHidden = true;
+  } catch (_) { /* private mode */ }
+  if (btnHiddenToggle) {
+    function updateHiddenToggle() {
+      const label = showHidden ? 'Hide hidden files' : 'Show hidden files';
+      btnHiddenToggle.classList.toggle('active', showHidden);
+      btnHiddenToggle.setAttribute('aria-checked', String(showHidden));
+      btnHiddenToggle.setAttribute('aria-label', label);
+      btnHiddenToggle.title = label;
+    }
+    updateHiddenToggle();
+    btnHiddenToggle.addEventListener('click', () => {
+      showHidden = !showHidden;
+      updateHiddenToggle();
+      try { localStorage.setItem('showHiddenFiles', showHidden ? '1' : '0'); } catch (_) { /* private mode */ }
+      if (window.QuickOpen) window.QuickOpen.invalidateCache();
+      loadRootTree();
+    });
+  }
+  // Expose for quickopen.js to read.
+  window.getShowHidden = () => showHidden;
 
   loadRootTree();
 

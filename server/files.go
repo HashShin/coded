@@ -6,11 +6,13 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -51,6 +53,9 @@ type treeEntry struct {
 	Name  string `json:"name"`
 	IsDir bool   `json:"isDir"`
 	Size  int64  `json:"size"`
+	// Exec is true for regular files with any execute permission bit set,
+	// so the UI can show a binary badge on extensionless executables.
+	Exec bool `json:"exec,omitempty"`
 }
 
 // handleTree serves GET /api/tree?path=<relpath>
@@ -62,6 +67,7 @@ func handleTree(root string) http.HandlerFunc {
 		}
 
 		relPath := r.URL.Query().Get("path")
+		showHidden := r.URL.Query().Get("hidden") == "1"
 
 		abs, err := resolveWithinRoot(root, relPath)
 		if err != nil {
@@ -79,11 +85,11 @@ func handleTree(root string) http.HandlerFunc {
 			return
 		}
 
-		// Split into dirs and files, skip dot-files.
+		// Split into dirs and files, skip dot-files unless showHidden.
 		var dirs, files []treeEntry
 		for _, e := range entries {
 			name := e.Name()
-			if strings.HasPrefix(name, ".") {
+			if !showHidden && strings.HasPrefix(name, ".") {
 				continue
 			}
 			info, err := e.Info()
@@ -94,6 +100,7 @@ func handleTree(root string) http.HandlerFunc {
 				Name:  name,
 				IsDir: e.IsDir(),
 				Size:  info.Size(),
+				Exec:  !e.IsDir() && info.Mode().Perm()&0o111 != 0,
 			}
 			if e.IsDir() {
 				dirs = append(dirs, entry)
@@ -196,6 +203,7 @@ func handleFileGet(root string, w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-File-Mtime", strconv.FormatInt(info.ModTime().UnixNano(), 10))
 	buf := make([]byte, info.Size())
 	total := 0
 	for total < len(buf) {
@@ -254,7 +262,7 @@ func handleFilePut(root string, w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Atomic write: write to temp file in same dir, then rename.
-	tmp, err := os.CreateTemp(dir, ".webeditor-tmp-*")
+	tmp, err := os.CreateTemp(dir, ".coded-tmp-*")
 	if err != nil {
 		writeJSONError(w, "create temp file error", http.StatusInternalServerError)
 		return
@@ -277,6 +285,9 @@ func handleFilePut(root string, w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	if newInfo, err := os.Stat(abs); err == nil {
+		w.Header().Set("X-File-Mtime", strconv.FormatInt(newInfo.ModTime().UnixNano(), 10))
+	}
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, `{"ok":true}`)
 }
@@ -284,7 +295,7 @@ func handleFilePut(root string, w http.ResponseWriter, r *http.Request) {
 // handleFiles serves GET /api/files.
 // It walks the root directory recursively and returns all non-binary file paths
 // (relative, forward-slash separated), sorted alphabetically, up to 5000 files.
-// Directories named .git, node_modules, or .webeditor are skipped, as are files
+// App metadata and dependency directories are skipped, as are files
 // larger than 10 MB and files containing a null byte in the first 512 bytes.
 func handleFiles(root string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -296,10 +307,12 @@ func handleFiles(root string) http.HandlerFunc {
 		const maxFiles = 5000
 		const maxFileSize = 10 * 1024 * 1024 // 10 MB
 
+		showHidden := r.URL.Query().Get("hidden") == "1"
+
 		skipDirs := map[string]bool{
 			".git":         true,
 			"node_modules": true,
-			".webeditor":   true,
+			".coded":       true,
 		}
 
 		var files []string
@@ -310,13 +323,13 @@ func handleFiles(root string) http.HandlerFunc {
 			}
 			name := d.Name()
 			if d.IsDir() {
-				if skipDirs[name] || strings.HasPrefix(name, ".") {
+				if skipDirs[name] || (!showHidden && strings.HasPrefix(name, ".")) {
 					return filepath.SkipDir
 				}
 				return nil
 			}
-			// Skip dotfiles.
-			if strings.HasPrefix(name, ".") {
+			// Skip dotfiles unless showHidden.
+			if !showHidden && strings.HasPrefix(name, ".") {
 				return nil
 			}
 			if len(files) >= maxFiles {
@@ -417,9 +430,9 @@ func handleSearch(root string) http.HandlerFunc {
 
 		// Directories to skip entirely.
 		skipDirs := map[string]bool{
-			".git":        true,
+			".git":         true,
 			"node_modules": true,
-			".webeditor":  true,
+			".coded":       true,
 		}
 
 		var results []searchResult
@@ -506,5 +519,342 @@ func handleSearch(root string) http.HandlerFunc {
 		if err := json.NewEncoder(w).Encode(map[string]interface{}{"results": results}); err != nil {
 			log.Printf("search json encode error: %v", err)
 		}
+	}
+}
+
+// ── Create ────────────────────────────────────────────────────────────────────
+
+type createRequest struct {
+	Path  string `json:"path"`
+	IsDir bool   `json:"isDir"`
+}
+
+// handleCreate serves POST /api/create
+// Body: {"path":"rel/path","isDir":bool}
+func handleCreate(root string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req createRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		if req.Path == "" {
+			writeJSONError(w, "path required", http.StatusBadRequest)
+			return
+		}
+		abs, err := resolveWithinRoot(root, req.Path)
+		if err != nil {
+			writeJSONError(w, "bad path", http.StatusBadRequest)
+			return
+		}
+		if _, err := os.Stat(abs); err == nil {
+			writeJSONError(w, "already exists", http.StatusConflict)
+			return
+		}
+		parent := filepath.Dir(abs)
+		parentInfo, err := os.Stat(parent)
+		if err != nil {
+			if os.IsNotExist(err) {
+				writeJSONError(w, "parent directory not found", http.StatusNotFound)
+			} else {
+				writeJSONError(w, "stat error", http.StatusInternalServerError)
+			}
+			return
+		}
+		if !parentInfo.IsDir() {
+			writeJSONError(w, "parent is not a directory", http.StatusBadRequest)
+			return
+		}
+		if req.IsDir {
+			if err := os.Mkdir(abs, 0o755); err != nil {
+				writeJSONError(w, "mkdir error: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			f, err := os.OpenFile(abs, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+			if err != nil {
+				writeJSONError(w, "create error: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			f.Close()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true}`)
+	}
+}
+
+// ── Rename ────────────────────────────────────────────────────────────────────
+
+type renameRequest struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// handleRename serves POST /api/rename
+// Body: {"from":"rel/old","to":"rel/new"}
+func handleRename(root string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req renameRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		if req.From == "" || req.To == "" {
+			writeJSONError(w, "from and to required", http.StatusBadRequest)
+			return
+		}
+		fromAbs, err := resolveWithinRoot(root, req.From)
+		if err != nil {
+			writeJSONError(w, "bad from path", http.StatusBadRequest)
+			return
+		}
+		toAbs, err := resolveWithinRoot(root, req.To)
+		if err != nil {
+			writeJSONError(w, "bad to path", http.StatusBadRequest)
+			return
+		}
+		if _, err := os.Stat(fromAbs); err != nil {
+			if os.IsNotExist(err) {
+				writeJSONError(w, "source not found", http.StatusNotFound)
+			} else {
+				writeJSONError(w, "stat error", http.StatusInternalServerError)
+			}
+			return
+		}
+		if _, err := os.Stat(toAbs); err == nil {
+			writeJSONError(w, "destination already exists", http.StatusConflict)
+			return
+		}
+		toParent := filepath.Dir(toAbs)
+		if info, err := os.Stat(toParent); err != nil || !info.IsDir() {
+			writeJSONError(w, "destination parent directory not found", http.StatusNotFound)
+			return
+		}
+		if err := os.Rename(fromAbs, toAbs); err != nil {
+			writeJSONError(w, "rename error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true}`)
+	}
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+
+type deleteRequest struct {
+	Path string `json:"path"`
+}
+
+// handleDelete serves POST /api/delete
+// Body: {"path":"rel/path"}
+func handleDelete(root string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req deleteRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		if req.Path == "" {
+			writeJSONError(w, "path required", http.StatusBadRequest)
+			return
+		}
+		abs, err := resolveWithinRoot(root, req.Path)
+		if err != nil {
+			writeJSONError(w, "bad path", http.StatusBadRequest)
+			return
+		}
+		if abs == root {
+			writeJSONError(w, "cannot delete root", http.StatusForbidden)
+			return
+		}
+		if _, err := os.Stat(abs); err != nil {
+			if os.IsNotExist(err) {
+				writeJSONError(w, "not found", http.StatusNotFound)
+			} else {
+				writeJSONError(w, "stat error", http.StatusInternalServerError)
+			}
+			return
+		}
+		if err := os.RemoveAll(abs); err != nil {
+			writeJSONError(w, "delete error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true}`)
+	}
+}
+
+// handleRaw serves GET /api/raw?path=<relpath> — raw bytes with a proper
+// Content-Type header. Unlike /api/file it does not reject binary content,
+// so it can be used as the src for <img> tags and as the URL for opening
+// HTML files in a browser tab.
+func handleRaw(root string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		relPath := r.URL.Query().Get("path")
+		if relPath == "" {
+			writeJSONError(w, "path required", http.StatusBadRequest)
+			return
+		}
+		abs, err := resolveWithinRoot(root, relPath)
+		if err != nil {
+			writeJSONError(w, "bad path", http.StatusBadRequest)
+			return
+		}
+		info, err := os.Stat(abs)
+		if err != nil {
+			if os.IsNotExist(err) {
+				writeJSONError(w, "not found", http.StatusNotFound)
+			} else {
+				writeJSONError(w, "stat error", http.StatusInternalServerError)
+			}
+			return
+		}
+		if info.IsDir() {
+			writeJSONError(w, "is a directory", http.StatusBadRequest)
+			return
+		}
+		const maxSize = 10 * 1024 * 1024
+		if info.Size() > maxSize {
+			writeJSONError(w, "file too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		data, err := os.ReadFile(abs)
+		if err != nil {
+			writeJSONError(w, "read error", http.StatusInternalServerError)
+			return
+		}
+		ct := mime.TypeByExtension(filepath.Ext(abs))
+		if ct == "" {
+			ct = http.DetectContentType(data)
+		}
+		w.Header().Set("Content-Type", ct)
+		w.Write(data)
+	}
+}
+
+// ── Copy endpoint ──────────────────────────────────────────────────────────────
+
+type copyRequest struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+func copyFile(src, dst string, mode os.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, in)
+	return err
+}
+
+func copyRecursive(src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if err := os.Mkdir(dst, info.Mode()); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		s := filepath.Join(src, e.Name())
+		d := filepath.Join(dst, e.Name())
+		if e.IsDir() {
+			if err := copyRecursive(s, d); err != nil {
+				return err
+			}
+		} else {
+			fi, err := e.Info()
+			if err != nil {
+				return err
+			}
+			if err := copyFile(s, d, fi.Mode()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func handleCopy(root string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req copyRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if req.From == "" || req.To == "" {
+			writeJSONError(w, "from and to required", http.StatusBadRequest)
+			return
+		}
+		fromAbs, err := resolveWithinRoot(root, req.From)
+		if err != nil {
+			writeJSONError(w, "bad from path", http.StatusBadRequest)
+			return
+		}
+		toAbs, err := resolveWithinRoot(root, req.To)
+		if err != nil {
+			writeJSONError(w, "bad to path", http.StatusBadRequest)
+			return
+		}
+		srcInfo, err := os.Stat(fromAbs)
+		if err != nil {
+			if os.IsNotExist(err) {
+				writeJSONError(w, "source not found", http.StatusNotFound)
+			} else {
+				writeJSONError(w, "stat error", http.StatusInternalServerError)
+			}
+			return
+		}
+		if _, err := os.Stat(toAbs); err == nil {
+			writeJSONError(w, "destination exists", http.StatusConflict)
+			return
+		}
+		destParent := filepath.Dir(toAbs)
+		if pi, err := os.Stat(destParent); err != nil || !pi.IsDir() {
+			writeJSONError(w, "destination parent is not a directory", http.StatusBadRequest)
+			return
+		}
+		if srcInfo.IsDir() {
+			err = copyRecursive(fromAbs, toAbs)
+		} else {
+			err = copyFile(fromAbs, toAbs, srcInfo.Mode())
+		}
+		if err != nil {
+			writeJSONError(w, "copy error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true}`)
 	}
 }

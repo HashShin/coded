@@ -1,6 +1,8 @@
 package main
 
-import "embed"
+import (
+  "embed"
+)
 
 //go:embed static
 var staticFiles embed.FS
