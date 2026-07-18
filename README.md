@@ -27,6 +27,8 @@
 ## Install
 
 ```sh
+git clone https://github.com/HashShin/coded.git
+cd coded
 go install .
 ```
 
