@@ -95,8 +95,8 @@ func handleUpdateInstall(version string, viaPkg bool) http.HandlerFunc {
 }
 
 // handleUpdateRestart serves POST /api/update/restart — responds OK then re-execs
-// the (now updated) binary so the server restarts on the same port.
-func handleUpdateRestart() http.HandlerFunc {
+// the (now updated) binary, injecting CODED_PORT so it binds the same port.
+func handleUpdateRestart(port int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -109,7 +109,7 @@ func handleUpdateRestart() http.HandlerFunc {
 		}
 		go func() {
 			time.Sleep(300 * time.Millisecond)
-			if err := Restart(); err != nil {
+			if err := RestartOnPort(port); err != nil {
 				log.Printf("coded: restart failed: %v", err)
 			}
 		}()

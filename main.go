@@ -171,6 +171,14 @@ func main() {
 		}
 	}
 
+	// On restart via /api/update/restart the server re-execs itself and passes
+	// CODED_PORT so the new process binds the same port.
+	if envPort := os.Getenv("CODED_PORT"); envPort != "" && *portFlag == 0 {
+		var p int
+		if _, err := fmt.Sscanf(envPort, "%d", &p); err == nil && p > 0 {
+			*portFlag = p
+		}
+	}
 	addr := fmt.Sprintf("127.0.0.1:%d", *portFlag)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -195,7 +203,7 @@ func main() {
 
 	openBrowser(url)
 
-	if err := server.Start(root, version, viaPkg, ln, staticFiles); err != nil {
+	if err := server.Start(root, version, viaPkg, port, ln, staticFiles); err != nil {
 		fmt.Fprintf(os.Stderr, "error: server exited: %v\n", err)
 		os.Exit(1)
 	}
