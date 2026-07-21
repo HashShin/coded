@@ -20,7 +20,8 @@ func handleUpdate(version string, viaPkg bool) http.HandlerFunc {
 			return
 		}
 		effectiveViaPkg := viaPkg || r.URL.Query().Get("pkg") == "1"
-		info := CheckForUpdate(version, effectiveViaPkg)
+		ignoreSkip := r.URL.Query().Get("ignore_skip") == "1"
+		info := CheckForUpdate(version, effectiveViaPkg, ignoreSkip)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		json.NewEncoder(w).Encode(info)
 	}
@@ -74,7 +75,7 @@ func handleUpdateInstall(version string, viaPkg bool) http.HandlerFunc {
 			return
 		}
 		effectiveViaPkg := viaPkg || r.URL.Query().Get("pkg") == "1"
-		info := CheckForUpdate(version, effectiveViaPkg)
+		info := CheckForUpdate(version, effectiveViaPkg, false)
 		if !info.Available {
 			writeJSONError(w, "no update available", http.StatusConflict)
 			return

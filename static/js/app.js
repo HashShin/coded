@@ -2006,53 +2006,33 @@ function init() {
       const v = _updateInfo && _updateInfo.current ? _updateInfo.current : null;
       vBadge.textContent = v ? 'v' + v : '—';
     }
-    const chip = document.getElementById('btn-update-chip');
-    if (chip && _updateInfo) {
-      if (_updateInfo.available) {
-        chip.textContent = '\u2b06';
-        chip.title = 'Update available: v' + _updateInfo.latest;
-        chip.hidden = false;
-      } else {
-        chip.hidden = true;
-      }
-    }
   }
 
-  const updateChip = document.getElementById('btn-update-chip');
-  if (updateChip) {
-    updateChip.addEventListener('click', () => {
-      closeSettings();
-      if (_updateInfo) showUpdateBanner(_updateInfo);
-    });
-  }
-
-  const btnCheckUpdate = document.getElementById('btn-check-update');
+  const btnRefreshUpdate = document.getElementById('btn-refresh-update');
   const updateStatus = document.getElementById('settings-update-status');
-  if (btnCheckUpdate) {
-    btnCheckUpdate.addEventListener('click', async () => {
-      btnCheckUpdate.disabled = true;
-      btnCheckUpdate.textContent = 'Checking\u2026';
+  if (btnRefreshUpdate) {
+    btnRefreshUpdate.addEventListener('click', async () => {
+      btnRefreshUpdate.disabled = true;
+      btnRefreshUpdate.classList.add('spinning');
       if (updateStatus) { updateStatus.hidden = false; updateStatus.textContent = ''; }
       try {
         // Reset cache so we hit the network fresh.
         await fetch('/api/update/refresh', { method: 'POST' });
-        const res = await fetch('/api/update' + _devPkg);
+        const res = await fetch('/api/update' + _devPkg + (_devPkg ? '&' : '?') + 'ignore_skip=1');
         if (!res.ok) throw new Error('server error');
         const info = await res.json();
         _updateInfo = info;
         if (info.available) {
-          if (updateStatus) updateStatus.hidden = true;
-          const chip = document.getElementById('btn-update-chip');
-          if (chip) { chip.textContent = '\u2b06'; chip.title = 'Update available: v' + info.latest; chip.hidden = false; }
-          if (updateStatus) { updateStatus.hidden = false; updateStatus.textContent = 'coded ' + info.latest + ' is available!'; }
+          closeSettings();
+          showUpdateBanner(info);
         } else {
           if (updateStatus) updateStatus.textContent = 'You\u2019re up to date' + (info.current ? ' (v' + info.current + ')' : '') + '.';
         }
       } catch (_) {
         if (updateStatus) updateStatus.textContent = 'Check failed. Are you online?';
       } finally {
-        btnCheckUpdate.disabled = false;
-        btnCheckUpdate.textContent = 'Check for updates';
+        btnRefreshUpdate.disabled = false;
+        btnRefreshUpdate.classList.remove('spinning');
       }
     });
   }

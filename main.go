@@ -198,7 +198,7 @@ func main() {
 	fmt.Printf("Listening on %s\n", url)
 
 	viaPkg := installedViaPkg()
-	server.CheckForUpdate(version, viaPkg) // warm the update cache for /api/update
+	server.CheckForUpdate(version, viaPkg, false) // warm the update cache for /api/update
 
 	openBrowser(url)
 

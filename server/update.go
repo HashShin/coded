@@ -148,7 +148,8 @@ func fetchLatestVersion() (string, error) {
 // CheckForUpdate reports whether a newer release than current is available.
 // It caches the GitHub result for checkInterval to avoid hammering the API.
 // Returns Available=false for dev builds, when offline, or when up to date.
-func CheckForUpdate(current string, viaPkg bool) UpdateInfo {
+// If ignoreSkip is true, a previously skipped version is still reported as available.
+func CheckForUpdate(current string, viaPkg bool, ignoreSkip bool) UpdateInfo {
 	info := UpdateInfo{Current: current, ViaPkg: viaPkg}
 	if current == "dev" || current == "" {
 		return info
@@ -176,7 +177,11 @@ func CheckForUpdate(current string, viaPkg bool) UpdateInfo {
 	cacheMu.Unlock()
 
 	info.Latest = latest
-	info.Available = latest != "" && latest != current && latest != skipped
+	if ignoreSkip {
+		info.Available = latest != "" && latest != current
+	} else {
+		info.Available = latest != "" && latest != current && latest != skipped
+	}
 	return info
 }
 

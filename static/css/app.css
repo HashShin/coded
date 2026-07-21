@@ -318,29 +318,23 @@ details[open] .settings-chevron {
   align-items: center;
   gap: 6px;
 }
-.settings-update-chip {
-  font-size: 12px;
-  color: #4a9eff;
+
+.settings-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ecbff;
   background: none;
   border: none;
-  padding: 0 2px;
+  padding: 2px;
   cursor: pointer;
-  line-height: 1;
-}
-.settings-update-chip[hidden] { display: none; }
-.settings-update-chip:hover { background: #005f9e; }
-.settings-check-update-btn {
-  font-size: 12px;
-  color: #9ecbff;
-  background: #0e3a5c;
-  border: 1px solid #1f5c8c;
+  line-height: 0;
   border-radius: 4px;
-  padding: 3px 10px;
-  cursor: pointer;
-  font-family: inherit;
 }
-.settings-check-update-btn:hover { background: #007acc; border-color: #007acc; color: #fff; }
-.settings-check-update-btn:disabled { opacity: 0.5; cursor: default; }
+.settings-refresh-btn:hover { color: #fff; background: #005f9e; }
+.settings-refresh-btn:disabled { opacity: 0.5; cursor: default; }
+.settings-refresh-btn.spinning svg { animation: coded-spin 0.8s linear infinite; }
+@keyframes coded-spin { to { transform: rotate(360deg); } }
 .settings-update-status {
   font-size: 12px;
   color: #aaa;

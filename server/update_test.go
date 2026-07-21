@@ -39,7 +39,7 @@ func TestCheckForUpdate_Available(t *testing.T) {
 	isolateCache(t)
 	mockGitHub(t, "v0.2.0")
 
-	info := CheckForUpdate("0.1.0", false)
+	info := CheckForUpdate("0.1.0", false, false)
 	if !info.Available {
 		t.Fatalf("expected update available, got %+v", info)
 	}
@@ -52,7 +52,7 @@ func TestCheckForUpdate_UpToDate(t *testing.T) {
 	isolateCache(t)
 	mockGitHub(t, "v0.2.0")
 
-	info := CheckForUpdate("0.2.0", false)
+	info := CheckForUpdate("0.2.0", false, false)
 	if info.Available {
 		t.Fatalf("expected no update when current == latest, got %+v", info)
 	}
@@ -62,7 +62,7 @@ func TestCheckForUpdate_DevSkips(t *testing.T) {
 	isolateCache(t)
 	mockGitHub(t, "v9.9.9")
 
-	info := CheckForUpdate("dev", false)
+	info := CheckForUpdate("dev", false, false)
 	if info.Available {
 		t.Fatalf("expected dev build to skip update check, got %+v", info)
 	}
@@ -73,7 +73,7 @@ func TestCheckForUpdate_Skipped(t *testing.T) {
 	mockGitHub(t, "v0.2.0")
 
 	SkipVersion("0.2.0")
-	info := CheckForUpdate("0.1.0", false)
+	info := CheckForUpdate("0.1.0", false, false)
 	if info.Available {
 		t.Fatalf("expected skipped version to suppress notice, got %+v", info)
 	}
@@ -92,7 +92,7 @@ func TestCheckForUpdate_CacheHitAvoidsFetch(t *testing.T) {
 	githubLatestURL = srv.URL
 	t.Cleanup(func() { githubLatestURL = orig })
 
-	info := CheckForUpdate("0.1.0", false)
+	info := CheckForUpdate("0.1.0", false, false)
 	if !info.Available || info.Latest != "0.5.0" {
 		t.Fatalf("expected cached latest 0.5.0 available, got %+v", info)
 	}
@@ -110,7 +110,7 @@ func TestCheckForUpdate_OfflineFallsBackToCache(t *testing.T) {
 	githubLatestURL = url
 	t.Cleanup(func() { githubLatestURL = orig })
 
-	info := CheckForUpdate("0.1.0", false)
+	info := CheckForUpdate("0.1.0", false, false)
 	// Fetch fails; falls back to stale cached 0.3.0 which is still > current.
 	if !info.Available || info.Latest != "0.3.0" {
 		t.Fatalf("expected fallback to cached 0.3.0, got %+v", info)
@@ -121,7 +121,7 @@ func TestUpdateInfo_ViaPkgPassedThrough(t *testing.T) {
 	isolateCache(t)
 	mockGitHub(t, "v0.2.0")
 
-	info := CheckForUpdate("0.1.0", true)
+	info := CheckForUpdate("0.1.0", true, false)
 	if !info.ViaPkg {
 		t.Fatalf("expected ViaPkg true, got %+v", info)
 	}
