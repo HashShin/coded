@@ -2187,8 +2187,7 @@ async function checkForUpdate() {
     const res = await fetch('/api/update');
     if (!res.ok) return;
     const info = await res.json();
-    // pkg-managed installs (TUR): show terminal notice only, not the web banner.
-    if (info && info.available && !info.viaPkg) showUpdateBanner(info);
+    if (info && info.available) showUpdateBanner(info);
   } catch (err) {
     // Offline or server not ready — silently ignore.
   }

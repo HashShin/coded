@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -89,6 +90,35 @@ func saveCache(c updateCache) {
 	}
 }
 
+// fetchLatestVersionViaPkg queries the apt cache for the candidate version of
+// coded. This is used when coded was installed via the Termux User Repository
+// (pkg install coded) so we use the same update mechanism as the package manager
+// rather than the GitHub API.
+//
+// Example output of `apt-cache policy coded`:
+//
+//	coded:
+//	  Installed: 0.1.2
+//	  Candidate: 0.1.3
+//	  ...
+func fetchLatestVersionViaPkg() (string, error) {
+	out, err := exec.Command("apt-cache", "policy", "coded").Output()
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Candidate:") {
+			v := strings.TrimSpace(strings.TrimPrefix(line, "Candidate:"))
+			if v == "(none)" || v == "" {
+				return "", nil
+			}
+			return strings.TrimPrefix(v, "v"), nil
+		}
+	}
+	return "", nil
+}
+
 // fetchLatestVersion queries GitHub for the latest release tag (without leading "v").
 func fetchLatestVersion() (string, error) {
 	client := &http.Client{Timeout: 3 * time.Second}
@@ -125,7 +155,14 @@ func CheckForUpdate(current string, viaPkg bool) UpdateInfo {
 	c := loadCache()
 	latest := c.LatestVersion
 	if time.Since(c.LastChecked) >= checkInterval {
-		if fetched, err := fetchLatestVersion(); err == nil && fetched != "" {
+		var fetched string
+		var fetchErr error
+		if viaPkg {
+			fetched, fetchErr = fetchLatestVersionViaPkg()
+		} else {
+			fetched, fetchErr = fetchLatestVersion()
+		}
+		if fetchErr == nil && fetched != "" {
 			latest = fetched
 			c.LatestVersion = fetched
 			c.LastChecked = time.Now()
