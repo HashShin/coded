@@ -192,14 +192,7 @@ func main() {
 	fmt.Printf("Listening on %s\n", url)
 
 	viaPkg := installedViaPkg()
-	if info := server.CheckForUpdate(version, viaPkg); info.Available {
-		fmt.Printf("\n  coded %s is available (you have %s).\n", info.Latest, info.Current)
-		if info.ViaPkg {
-			fmt.Print("  Update with: pkg upgrade coded\n\n")
-		} else {
-			fmt.Print("  Update with: coded update\n\n")
-		}
-	}
+	server.CheckForUpdate(version, viaPkg) // warm the update cache for /api/update
 
 	openBrowser(url)
 
