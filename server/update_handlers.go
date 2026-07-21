@@ -109,7 +109,7 @@ func handleUpdateInstall(version string, viaPkg bool) http.HandlerFunc {
 
 // runPkgUpgrade runs `pkg upgrade -y coded` and streams each output line as an SSE log event.
 func runPkgUpgrade(w http.ResponseWriter, flusher http.Flusher, sseMsg func(event, data string)) error {
-	cmd := exec.Command("pkg", "upgrade", "-y", "coded")
+	cmd := exec.Command("pkg", "install", "-y", "coded")
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 
 	pr, pw, err := os.Pipe()
