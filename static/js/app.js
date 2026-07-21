@@ -2207,14 +2207,17 @@ function fmtMB(bytes) {
   return (bytes / 1048576).toFixed(1) + ' MB';
 }
 
-function waitForServer(onGiveUp, attempt) {
+function waitForServer(onGiveUp, attempt, onSuccess) {
   if (attempt === undefined) attempt = 0;
   setTimeout(() => {
     fetch('/', { cache: 'no-store' })
-      .then(() => location.reload())
+      .then(() => {
+        if (onSuccess) onSuccess();
+        setTimeout(() => location.reload(), 350);
+      })
       .catch(() => {
         if (attempt === 11 && onGiveUp) onGiveUp();
-        waitForServer(onGiveUp, attempt + 1);
+        waitForServer(onGiveUp, attempt + 1, onSuccess);
       });
   }, 700);
 }
@@ -2279,20 +2282,52 @@ function showUpdateBanner(info) {
       newLater.textContent = 'Later';
       newLater.style.display = '';
       newNow.onclick = () => {
-        msg.textContent = 'Restarting\u2026 this page will reload automatically.';
+        // Fire restart immediately — don't wait for animation.
+        fetch('/api/update/restart', { method: 'POST' }).catch(() => {});
         newNow.style.display = 'none';
         newLater.style.display = 'none';
-        // Show a manual reload button in case the tab is backgrounded on mobile.
-        const reloadBtn = document.createElement('button');
-        reloadBtn.id = 'update-banner-reload';
-        reloadBtn.textContent = 'Reload';
-        reloadBtn.className = newNow.className;
-        reloadBtn.style.cssText = newNow.style.cssText;
-        newLater.after(reloadBtn);
-        reloadBtn.onclick = () => location.reload();
-        fetch('/api/update/restart', { method: 'POST' }).catch(() => {});
+
+        // Show restart progress animation.
+        if (progress) progress.hidden = false;
+        if (fill) { fill.style.transition = 'none'; fill.style.width = '0%'; }
+
+        const steps = [
+          'Stopping server\u2026',
+          'Loading new binary\u2026',
+          'Starting coded ' + info.latest + '\u2026',
+          'Almost there\u2026',
+          'Connecting\u2026',
+        ];
+        let stepIdx = 0;
+        msg.textContent = steps[0];
+        if (ptext) ptext.textContent = '';
+
+        // Animate fill from 0 → 90% over ~8s (CSS transition handles smoothness).
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (fill) { fill.style.transition = 'width 8s cubic-bezier(0.1, 0.5, 0.5, 1)'; fill.style.width = '90%'; }
+          });
+        });
+
+        // Cycle status messages every ~1.6s.
+        const msgTimer = setInterval(() => {
+          stepIdx = Math.min(stepIdx + 1, steps.length - 1);
+          msg.textContent = steps[stepIdx];
+        }, 1600);
+
+        // Poll for server; on success flash to 100% and reload.
         waitForServer(() => {
-          msg.textContent = 'Update installed. If this page didn\u2019t reload, re-run coded in your terminal and refresh.';
+          clearInterval(msgTimer);
+          msg.textContent = 'Reload if the page doesn\u2019t refresh automatically.';
+          const reloadBtn = document.createElement('button');
+          reloadBtn.textContent = 'Reload';
+          reloadBtn.className = newNow.className;
+          newLater.after(reloadBtn);
+          reloadBtn.onclick = () => location.reload();
+        }, undefined, () => {
+          clearInterval(msgTimer);
+          if (fill) { fill.style.transition = 'width 0.3s ease'; fill.style.width = '100%'; }
+          msg.textContent = 'Reloading\u2026';
         });
       };
       newLater.onclick = () => { banner.classList.remove('visible'); };
