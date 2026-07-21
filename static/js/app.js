@@ -2207,9 +2207,15 @@ function fmtMB(bytes) {
   return (bytes / 1048576).toFixed(1) + ' MB';
 }
 
-function waitForServer() {
+function waitForServer(onGiveUp, attempt) {
+  if (attempt === undefined) attempt = 0;
   setTimeout(() => {
-    fetch('/').then(() => location.reload()).catch(() => waitForServer());
+    fetch('/', { cache: 'no-store' })
+      .then(() => location.reload())
+      .catch(() => {
+        if (attempt === 11 && onGiveUp) onGiveUp();
+        waitForServer(onGiveUp, attempt + 1);
+      });
   }, 700);
 }
 
@@ -2267,16 +2273,27 @@ function showUpdateBanner(info) {
     es.addEventListener('done', () => {
       es.close();
       if (progress) progress.hidden = true;
-      msg.textContent = 'Update installed! Restart to apply.';
+      msg.textContent = 'Update installed! Restart coded to apply.';
       newNow.textContent = 'Restart now';
       newNow.style.display = '';
+      newLater.textContent = 'Later';
       newLater.style.display = '';
       newNow.onclick = () => {
-        msg.textContent = 'Restarting\u2026';
+        msg.textContent = 'Restarting\u2026 this page will reload automatically.';
         newNow.style.display = 'none';
         newLater.style.display = 'none';
+        // Show a manual reload button in case the tab is backgrounded on mobile.
+        const reloadBtn = document.createElement('button');
+        reloadBtn.id = 'update-banner-reload';
+        reloadBtn.textContent = 'Reload';
+        reloadBtn.className = newNow.className;
+        reloadBtn.style.cssText = newNow.style.cssText;
+        newLater.after(reloadBtn);
+        reloadBtn.onclick = () => location.reload();
         fetch('/api/update/restart', { method: 'POST' }).catch(() => {});
-        waitForServer();
+        waitForServer(() => {
+          msg.textContent = 'Update installed. If this page didn\u2019t reload, re-run coded in your terminal and refresh.';
+        });
       };
       newLater.onclick = () => { banner.classList.remove('visible'); };
     });

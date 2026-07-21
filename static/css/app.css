@@ -1529,7 +1529,8 @@ mark.search-match.current { background: rgba(255,160,0,0.7); }
   right: 0;
   z-index: 100;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 8px 10px;
   padding: 6px 12px;
   background: #0e3a5c;
   color: #9ecbff;
@@ -1560,6 +1561,7 @@ mark.search-match.current { background: rgba(255,160,0,0.7); }
   margin-top: 6px;
   width: 100%;
 }
+.update-progress[hidden] { display: none !important; }
 .update-progress-track {
   flex: 1;
   height: 5px;
@@ -1580,6 +1582,15 @@ mark.search-match.current { background: rgba(255,160,0,0.7); }
   white-space: nowrap;
   min-width: 90px;
   text-align: right;
+}
+@media (max-width: 600px) {
+  #update-banner { padding: 8px 12px; }
+  #update-banner-msg { flex: 1 1 100%; }
+  #update-banner .change-banner-actions { flex: 1 1 100%; flex-wrap: wrap; }
+  #update-banner-now,
+  #update-banner-skip,
+  #update-banner-later { flex: 1 1 auto; text-align: center; padding: 7px 10px; }
+  .update-progress { flex: 1 1 100%; }
 }
 
 /* ── Shared modal polish ─────────────────────────────────────────────────────
