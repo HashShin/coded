@@ -1999,7 +1999,14 @@ function init() {
   const settingsOverlay = document.getElementById('settings-overlay');
   const btnSettings = document.getElementById('btn-settings');
 
-  function openSettings() { if (settingsOverlay) settingsOverlay.style.display = 'flex'; }
+  function openSettings() {
+    if (settingsOverlay) settingsOverlay.style.display = 'flex';
+    const vBadge = document.getElementById('settings-version');
+    if (vBadge) {
+      const v = _updateInfo && _updateInfo.current ? _updateInfo.current : null;
+      vBadge.textContent = v ? 'v' + v : '—';
+    }
+  }
   function closeSettings() { if (settingsOverlay) settingsOverlay.style.display = 'none'; }
 
   if (btnSettings) btnSettings.addEventListener('click', openSettings);
@@ -2182,11 +2189,14 @@ function init() {
 /**
  * Ask the server whether a newer release is available and show a banner if so.
  */
+let _updateInfo = null;
+
 async function checkForUpdate() {
   try {
     const res = await fetch('/api/update');
     if (!res.ok) return;
     const info = await res.json();
+    _updateInfo = info;
     if (info && info.available) showUpdateBanner(info);
   } catch (err) {
     // Offline or server not ready — silently ignore.
