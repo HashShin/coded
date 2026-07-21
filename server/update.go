@@ -189,6 +189,16 @@ func CheckForUpdate(current string, viaPkg bool, ignoreSkip bool) UpdateInfo {
 	return info
 }
 
+// ResetUpdateCache zeroes LastChecked so the next CheckForUpdate call hits the network fresh.
+// Called on startup so every run re-fetches the latest version.
+func ResetUpdateCache() {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	c := loadCache()
+	c.LastChecked = time.Time{}
+	saveCache(c)
+}
+
 // SkipVersion records a version the user chose to skip, suppressing future notices for it.
 func SkipVersion(v string) {
 	cacheMu.Lock()

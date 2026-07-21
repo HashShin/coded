@@ -192,6 +192,7 @@ func main() {
 	fmt.Printf("Listening on %s\n", url)
 
 	viaPkg := installedViaPkg()
+	server.ResetUpdateCache()                      // force fresh network check every run
 	server.CheckForUpdate(version, viaPkg, false) // warm the update cache for /api/update
 
 	openBrowser(url)
