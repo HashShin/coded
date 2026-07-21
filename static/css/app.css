@@ -313,6 +313,24 @@ details[open] .settings-chevron {
 .settings-link:hover {
   text-decoration: underline;
 }
+.settings-version-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.settings-update-chip {
+  font-size: 11px;
+  color: #fff;
+  background: #007acc;
+  border: none;
+  border-radius: 10px;
+  padding: 2px 7px;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.settings-update-chip[hidden] { display: none; }
+.settings-update-chip:hover { background: #005f9e; }
 .settings-check-update-btn {
   font-size: 12px;
   color: #9ecbff;

@@ -2006,6 +2006,23 @@ function init() {
       const v = _updateInfo && _updateInfo.current ? _updateInfo.current : null;
       vBadge.textContent = v ? 'v' + v : '—';
     }
+    const chip = document.getElementById('btn-update-chip');
+    if (chip && _updateInfo) {
+      if (_updateInfo.available) {
+        chip.textContent = '\u2b06 ' + _updateInfo.latest;
+        chip.hidden = false;
+      } else {
+        chip.hidden = true;
+      }
+    }
+  }
+
+  const updateChip = document.getElementById('btn-update-chip');
+  if (updateChip) {
+    updateChip.addEventListener('click', () => {
+      closeSettings();
+      if (_updateInfo) showUpdateBanner(_updateInfo);
+    });
   }
 
   const btnCheckUpdate = document.getElementById('btn-check-update');
@@ -2024,8 +2041,9 @@ function init() {
         _updateInfo = info;
         if (info.available) {
           if (updateStatus) updateStatus.hidden = true;
-          closeSettings();
-          showUpdateBanner(info);
+          const chip = document.getElementById('btn-update-chip');
+          if (chip) { chip.textContent = '\u2b06 ' + info.latest; chip.hidden = false; }
+          if (updateStatus) { updateStatus.hidden = false; updateStatus.textContent = 'coded ' + info.latest + ' is available!'; }
         } else {
           if (updateStatus) updateStatus.textContent = 'You\u2019re up to date' + (info.current ? ' (v' + info.current + ')' : '') + '.';
         }

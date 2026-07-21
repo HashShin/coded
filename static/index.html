@@ -244,14 +244,17 @@
         <div class="settings-section-body">
           <div class="settings-row settings-about-row">
             <span class="settings-label">Version</span>
-            <span id="settings-version" class="settings-version-badge">—</span>
+            <span class="settings-version-row">
+              <span id="settings-version" class="settings-version-badge">—</span>
+              <button id="btn-update-chip" class="settings-update-chip" hidden title="Update available"></button>
+            </span>
           </div>
           <div class="settings-row settings-about-row">
             <span class="settings-label">Source</span>
             <a class="settings-link" href="https://github.com/HashShin/coded" target="_blank" rel="noopener">github.com/HashShin/coded</a>
           </div>
           <div class="settings-row settings-about-row">
-            <span class="settings-label">Updates</span>
+            <span class="settings-label"></span>
             <button id="btn-check-update" class="settings-check-update-btn">Check for updates</button>
           </div>
           <div id="settings-update-status" class="settings-update-status" hidden></div>
