@@ -1,0 +1,51 @@
+version: 2
+
+project_name: coded
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: .
+    binary: coded
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    goarm:
+      - "7"
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  footer: |
+    ---
+    Termux users: `coded` is also available in the [TUR](https://github.com/termux-user-repository/tur) — `pkg install coded` after enabling the tur-repo.
