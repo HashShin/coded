@@ -23,6 +23,13 @@ if (-not $Tag) {
 }
 
 $Version = $Tag.TrimStart("v")
+
+# When invoked by `coded update`, skip if already on the latest version.
+if ($env:CODED_CURRENT_VERSION -and $env:CODED_CURRENT_VERSION -eq $Version) {
+    Write-Host "coded is already up to date ($Version)"
+    exit 0
+}
+
 $Filename = "${Binary}_${Version}_windows_${Arch}.exe"
 $Url = "https://github.com/$Repo/releases/download/$Tag/$Filename"
 

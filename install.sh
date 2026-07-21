@@ -41,6 +41,13 @@ if [ -z "$TAG" ]; then
 fi
 
 VERSION="${TAG#v}"
+
+# When invoked by `coded update`, skip if already on the latest version.
+if [ -n "$CODED_CURRENT_VERSION" ] && [ "$CODED_CURRENT_VERSION" = "$VERSION" ]; then
+  echo "coded is already up to date (${VERSION})"
+  exit 0
+fi
+
 FILENAME="${BINARY}_${VERSION}_${OS}_${ARCH}"
 URL="https://github.com/${REPO}/releases/download/${TAG}/${FILENAME}"
 

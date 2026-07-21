@@ -12,6 +12,34 @@ import (
 	"github.com/HashShin/coded/server"
 )
 
+// version is set at build time via -ldflags "-X main.version=...".
+var version = "dev"
+
+const (
+	installShURL  = "https://raw.githubusercontent.com/HashShin/coded/main/install.sh"
+	installPS1URL = "https://raw.githubusercontent.com/HashShin/coded/main/install.ps1"
+)
+
+// runUpdate re-runs the install script for the current platform. It passes the
+// current version so the script can skip the download if already up to date.
+func runUpdate() int {
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("powershell", "-Command", "irm "+installPS1URL+" | iex")
+	} else {
+		cmd = exec.Command("sh", "-c", "curl -fsSL "+installShURL+" | sh")
+	}
+	cmd.Env = append(os.Environ(), "CODED_CURRENT_VERSION="+version)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: update failed: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
 func openBrowser(url string) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
@@ -35,9 +63,27 @@ func openBrowser(url string) {
 }
 
 func main() {
+	// Positional subcommands (not flags).
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "update", "upgrade":
+			os.Exit(runUpdate())
+		case "version":
+			fmt.Printf("coded %s\n", version)
+			return
+		}
+	}
+
 	portFlag := flag.Int("port", 0, "port to listen on (0 = find a free port)")
 	dirFlag := flag.String("dir", "", "root directory to serve (default: current directory)")
+	versionFlag := flag.Bool("version", false, "print version and exit")
+	vFlag := flag.Bool("v", false, "print version and exit (shorthand)")
 	flag.Parse()
+
+	if *versionFlag || *vFlag {
+		fmt.Printf("coded %s\n", version)
+		return
+	}
 
 	root := *dirFlag
 	if root == "" {
