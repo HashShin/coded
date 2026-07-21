@@ -2191,9 +2191,11 @@ function init() {
  */
 let _updateInfo = null;
 
+const _devPkg = location.search.includes('pkg=1') ? '?pkg=1' : '';
+
 async function checkForUpdate() {
   try {
-    const res = await fetch('/api/update');
+    const res = await fetch('/api/update' + _devPkg);
     if (!res.ok) return;
     const info = await res.json();
     _updateInfo = info;
@@ -2254,7 +2256,7 @@ function showUpdateBanner(info) {
       if (logBox) { logBox.hidden = false; logBox.textContent = ''; }
       msg.textContent = 'Upgrading via pkg\u2026';
 
-      const es = new EventSource('/api/update/install');
+      const es = new EventSource('/api/update/install' + _devPkg);
       es.addEventListener('log', e => {
         try {
           const line = JSON.parse(e.data);
