@@ -647,6 +647,8 @@ html, body {
   justify-content: center;
   -webkit-tap-highlight-color: transparent;
   flex-shrink: 0;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .sidebar-close-btn:active { color: #fff; }
 
@@ -1409,6 +1411,37 @@ mark.search-match.current { background: rgba(255,160,0,0.7); }
 }
 #change-banner-reload:hover { background: #007acc; border-color: #007acc; color: #fff; }
 #change-banner-dismiss:hover { background: #3a3a3a; border-color: #555; color: #ccc; }
+
+#deleted-banner {
+  display: none;
+  position: fixed;
+  top: 68px;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: #6e1a1a;
+  color: #ffb3b3;
+  font-size: 13px;
+  border-bottom: 1px solid #a03030;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+}
+#deleted-banner.visible { display: flex; }
+#deleted-banner-msg { flex: 1; }
+#deleted-banner-close,
+#deleted-banner-keep {
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid #a03030;
+  background: #4a1010;
+  color: #ffb3b3;
+  font-size: 12px;
+  cursor: pointer;
+}
+#deleted-banner-close:hover { background: #c0392b; border-color: #c0392b; color: #fff; }
+#deleted-banner-keep:hover { background: #3a3a3a; border-color: #555; color: #ccc; }
 
 /* ── Shared modal polish ─────────────────────────────────────────────────────
    Applied last so it wins the cascade over the per-modal blocks above. */

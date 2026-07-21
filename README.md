@@ -27,6 +27,19 @@
 
 ## Install
 
+### Termux (Android)
+
+If you use Termux, install coded directly with `pkg`:
+
+```sh
+pkg install tur-repo
+pkg install coded
+```
+
+> `tur-repo` is required first — it adds the Termux User Repository where coded is published.
+
+### Go
+
 ```sh
 go install github.com/HashShin/coded@latest
 ```

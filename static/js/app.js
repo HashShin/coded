@@ -22,6 +22,8 @@ let showHidden = false;
 
 /** Path currently showing the external-change banner, or null. */
 let _bannerPath = null;
+/** Path currently showing the deleted-file banner, or null. */
+let _deletedBannerPath = null;
 
 /** Shows/hides the topbar run button; assigned after DOM ready. */
 let updateRunButton = null;
@@ -162,25 +164,28 @@ const FILE_BADGES = {
   yaml:   { label: 'YM', color: '#cb171e', icon: 'yaml' },
   yml:    { label: 'YM', color: '#cb171e', icon: 'yaml' },
   toml:   { label: 'TM', color: '#9c4221', icon: 'toml' },
-  xml:    { label: 'XM', color: '#8bc34a' },
+  xml:    { label: 'XM', color: '#50bee8', rawSvg: '<svg viewBox="96 0 384 512" width="12" height="15" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path fill="#e2e5e7" d="M128,0c-17.6,0-32,14.4-32,32v448c0,17.6,14.4,32,32,32h320c17.6,0,32-14.4,32-32V128L352,0H128z"/><path fill="#b0b7bd" d="M384,128h96L352,0v96C352,113.6,366.4,128,384,128z"/><polygon fill="#cad1d8" points="480,224 384,128 480,128"/><path fill="#50bee8" d="M416,416c0,8.8-7.2,16-16,16H48c-8.8,0-16-7.2-16-16V256c0-8.8,7.2-16,16-16h352c8.8,0,16,7.2,16,16V416z"/><path fill="#fff" d="M131.28,326.176l22.272-27.888c6.64-8.688,19.568,2.432,12.288,10.752c-7.664,9.088-15.728,18.944-23.424,29.024l26.112,32.496c7.024,9.6-7.04,18.816-13.952,9.344l-23.536-30.192l-23.152,30.832c-6.528,9.328-20.992-1.152-13.68-9.856l25.712-32.624c-8.064-10.096-15.872-19.936-23.664-29.024c-8.064-9.6,6.912-19.44,12.784-10.48L131.28,326.176z"/><path fill="#fff" d="M201.264,327.84v47.328c0,5.648-4.608,8.832-9.2,8.832c-4.096,0-7.68-3.184-7.68-8.832v-72.016c0-6.656,5.648-8.848,7.68-8.848c3.696,0,5.872,2.192,8.048,4.624l28.16,37.984l29.152-39.408c4.24-5.232,14.592-3.2,14.592,5.648v72.016c0,5.648-3.584,8.832-7.664,8.832c-4.608,0-8.192-3.184-8.192-8.832V327.84l-21.248,26.864c-4.592,5.648-10.352,5.648-14.576,0L201.264,327.84z"/><path fill="#fff" d="M294.288,303.152c0-4.224,3.584-7.808,8.064-7.808c4.096,0,7.552,3.6,7.552,7.808v64.096h34.8c12.528,0,12.8,16.752,0,16.752h-42.336c-4.48,0-8.064-3.184-8.064-7.808v-73.04H294.288z"/><path fill="#cad1d8" d="M400,432H96v16h304c8.8,0,16-7.2,16-16v-16C416,424.8,408.8,432,400,432z"/></svg>' },
   md:     { label: 'MD', color: '#8a9199', icon: 'markdown' },
   txt:    { txtGlyph: true, color: '#e8ecf0' },
   sh:     { label: '$',  color: '#89e051', svg: '<rect x="3" y="5" width="17" height="14" rx="2" stroke="currentColor" stroke-width="2"/><path d="M7 10L9 12L7 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 14H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' },
   bash:   { label: '$',  color: '#89e051', svg: '<rect x="3" y="5" width="17" height="14" rx="2" stroke="currentColor" stroke-width="2"/><path d="M7 10L9 12L7 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 14H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' },
   zsh:    { label: '$',  color: '#89e051', svg: '<rect x="3" y="5" width="17" height="14" rx="2" stroke="currentColor" stroke-width="2"/><path d="M7 10L9 12L7 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 14H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' },
-  sql:    { label: 'SQ', color: '#e38c00' },
+  sql:    { label: 'SQ', color: '#e38c00', svg: '<ellipse cx="12" cy="7" rx="8" ry="3" stroke="currentColor" stroke-width="1.5"/><path d="M4 7v5c0 1.657 3.582 3 8 3s8-1.343 8-3V7" stroke="currentColor" stroke-width="1.5"/><path d="M4 12v5c0 1.657 3.582 3 8 3s8-1.343 8-3v-5" stroke="currentColor" stroke-width="1.5"/>' },
   lua:    { label: 'LU', color: '#6b9aff', icon: 'lua' },
   dart:   { label: 'DA', color: '#00b4ab', icon: 'dart' },
   vue:    { label: 'VU', color: '#41b883', icon: 'vuedotjs' },
   svelte: { label: 'SV', color: '#ff3e00', icon: 'svelte' },
-  svg:    { label: 'SVG', color: '#ffb13b' },
+  svg:    { label: 'SVG', color: '#f7b84e', rawSvg: '<svg viewBox="96 0 384 512" width="12" height="15" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path fill="#e2e5e7" d="M128,0c-17.6,0-32,14.4-32,32v448c0,17.6,14.4,32,32,32h320c17.6,0,32-14.4,32-32V128L352,0H128z"/><path fill="#b0b7bd" d="M384,128h96L352,0v96C352,113.6,366.4,128,384,128z"/><polygon fill="#cad1d8" points="480,224 384,128 480,128"/><path fill="#f7b84e" d="M416,416c0,8.8-7.2,16-16,16H48c-8.8,0-16-7.2-16-16V256c0-8.8,7.2-16,16-16h352c8.8,0,16,7.2,16,16V416z"/><path fill="#fff" d="M96.816,314.656c2.944-24.816,40.416-29.28,58.08-15.712c8.704,7.024-0.512,18.16-8.192,12.528c-9.472-6.016-30.96-8.832-33.648,4.464c-3.456,20.992,52.192,8.976,51.312,42.992c-0.896,32.496-47.984,33.264-65.648,18.672c-4.224-3.44-4.096-9.056-1.792-12.528c3.328-3.312,7.04-4.464,11.392-0.896c10.48,7.168,37.488,12.544,39.392-5.648C146.064,339.616,92.848,351.008,96.816,314.656z"/><path fill="#fff" d="M209.12,378.256l-33.776-70.752c-4.992-10.112,10.112-18.416,15.728-7.808l11.392,25.712l14.704,33.776l14.448-33.776l11.392-25.712c5.12-9.712,19.952-3.584,15.616,7.04L226,378.256C223.056,386.32,213.984,388.224,209.12,378.256z"/><path fill="#fff" d="M345.76,374.16c-9.088,7.536-20.224,10.752-31.472,10.752c-26.88,0-45.936-15.36-45.936-45.808c0-25.84,20.096-45.92,47.072-45.92c10.112,0,21.232,3.456,29.168,11.264c7.792,7.664-3.456,19.056-11.12,12.288c-4.736-4.624-11.392-8.064-18.048-8.064c-15.472,0-30.432,12.4-30.432,30.432c0,18.944,12.528,30.448,29.296,30.448c7.792,0,14.448-2.304,19.184-5.76V348.08h-19.184c-11.392,0-10.24-15.632,0-15.632h25.584c4.736,0,9.072,3.6,9.072,7.568v27.248C348.96,369.552,347.936,371.712,345.76,374.16z"/><path fill="#cad1d8" d="M400,432H96v16h304c8.8,0,16-7.2,16-16v-16C416,424.8,408.8,432,400,432z"/></svg>' },
   png:    { label: 'IMG', color: '#a074c4' },
   jpg:    { label: 'IMG', color: '#a074c4' },
   jpeg:   { label: 'IMG', color: '#a074c4' },
   gif:    { label: 'IMG', color: '#a074c4' },
   mod:    { label: 'GO', color: '#00add8', icon: 'go' }, // go.mod
   sum:    { label: 'GO', color: '#00add8', icon: 'go' }, // go.sum
-  lock:   { label: 'LK', color: '#8a9199' },
+  lock:   { label: 'LK', color: '#8a9199', svg: '<rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="16" r="1.5" fill="currentColor"/>' },
+  cfg:    { label: 'CF', color: '#99b8c4', rawSvg: '<svg viewBox="0 0 32 32" width="15" height="15" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M23.265,24.381l.9-.894c4.164.136,4.228-.01,4.411-.438l1.144-2.785L29.805,20l-.093-.231c-.049-.122-.2-.486-2.8-2.965V15.5c3-2.89,2.936-3.038,2.765-3.461L28.538,9.225c-.171-.422-.236-.587-4.37-.474l-.9-.93a20.166,20.166,0,0,0-.141-4.106l-.116-.263-2.974-1.3c-.438-.2-.592-.272-3.4,2.786l-1.262-.019c-2.891-3.086-3.028-3.03-3.461-2.855L9.149,3.182c-.433.175-.586.237-.418,4.437l-.893.89c-4.162-.136-4.226.012-4.407.438L2.285,11.733,2.195,12l.094.232c.049.12.194.48,2.8,2.962l0,1.3c-3,2.89-2.935,3.038-2.763,3.462l1.138,2.817c.174.431.236.584,4.369.476l.9.935a20.243,20.243,0,0,0,.137,4.1l.116.265,2.993,1.308c.435.182.586.247,3.386-2.8l1.262.016c2.895,3.09,3.043,3.03,3.466,2.859l2.759-1.115C23.288,28.644,23.44,28.583,23.265,24.381ZM11.407,17.857a4.957,4.957,0,1,1,6.488,2.824A5.014,5.014,0,0,1,11.407,17.857Z"/></svg>' },
+  conf:   { label: 'CF', color: '#99b8c4', rawSvg: '<svg viewBox="0 0 32 32" width="15" height="15" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M23.265,24.381l.9-.894c4.164.136,4.228-.01,4.411-.438l1.144-2.785L29.805,20l-.093-.231c-.049-.122-.2-.486-2.8-2.965V15.5c3-2.89,2.936-3.038,2.765-3.461L28.538,9.225c-.171-.422-.236-.587-4.37-.474l-.9-.93a20.166,20.166,0,0,0-.141-4.106l-.116-.263-2.974-1.3c-.438-.2-.592-.272-3.4,2.786l-1.262-.019c-2.891-3.086-3.028-3.03-3.461-2.855L9.149,3.182c-.433.175-.586.237-.418,4.437l-.893.89c-4.162-.136-4.226.012-4.407.438L2.285,11.733,2.195,12l.094.232c.049.12.194.48,2.8,2.962l0,1.3c-3,2.89-2.935,3.038-2.763,3.462l1.138,2.817c.174.431.236.584,4.369.476l.9.935a20.243,20.243,0,0,0,.137,4.1l.116.265,2.993,1.308c.435.182.586.247,3.386-2.8l1.262.016c2.895,3.09,3.043,3.03,3.466,2.859l2.759-1.115C23.288,28.644,23.44,28.583,23.265,24.381ZM11.407,17.857a4.957,4.957,0,1,1,6.488,2.824A5.014,5.014,0,0,1,11.407,17.857Z"/></svg>' },
+  ini:    { label: 'IN', color: '#99b8c4', rawSvg: '<svg viewBox="0 0 32 32" width="15" height="15" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M23.265,24.381l.9-.894c4.164.136,4.228-.01,4.411-.438l1.144-2.785L29.805,20l-.093-.231c-.049-.122-.2-.486-2.8-2.965V15.5c3-2.89,2.936-3.038,2.765-3.461L28.538,9.225c-.171-.422-.236-.587-4.37-.474l-.9-.93a20.166,20.166,0,0,0-.141-4.106l-.116-.263-2.974-1.3c-.438-.2-.592-.272-3.4,2.786l-1.262-.019c-2.891-3.086-3.028-3.03-3.461-2.855L9.149,3.182c-.433.175-.586.237-.418,4.437l-.893.89c-4.162-.136-4.226.012-4.407.438L2.285,11.733,2.195,12l.094.232c.049.12.194.48,2.8,2.962l0,1.3c-3,2.89-2.935,3.038-2.763,3.462l1.138,2.817c.174.431.236.584,4.369.476l.9.935a20.243,20.243,0,0,0,.137,4.1l.116.265,2.993,1.308c.435.182.586.247,3.386-2.8l1.262.016c2.895,3.09,3.043,3.03,3.466,2.859l2.759-1.115C23.288,28.644,23.44,28.583,23.265,24.381ZM11.407,17.857a4.957,4.957,0,1,1,6.488,2.824A5.014,5.014,0,0,1,11.407,17.857Z"/></svg>' },
   zig:    { label: 'ZG', color: '#f7a41d', icon: 'zig' },
   ex:     { label: 'EX', color: '#6e4a7e', icon: 'elixir' },
   exs:    { label: 'EX', color: '#6e4a7e', icon: 'elixir' },
@@ -212,9 +217,9 @@ const FILE_BADGES = {
 };
 // Special full filenames (no useful extension).
 const FILE_BADGES_BY_NAME = {
-  'makefile':   { label: 'MK', color: '#6d8086' },
+  'makefile':   { label: 'MK', color: '#6d8086', rawSvg: '<svg viewBox="10 5 108 118" width="13" height="16" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="m 29.09375,11.234375 c -3.183804,0 -5.71875,2.566196 -5.71875,5.75 l 0,94.031255 c 0,3.1838 2.534946,5.75 5.71875,5.75 l 69.8125,0 c 3.1838,0 5.71875,-2.5662 5.71875,-5.75 l 0,-70.656255 -21.03125,0 c -4.306108,0 -8.0625,-3.141109 -8.0625,-7.3125 l 0,-21.8125 -46.4375,0 z m 50.4375,0 0,21.8125 c 0,1.714122 1.631968,3.3125 4.0625,3.3125 l 21.03125,0 -25.09375,-25.125 z m -32.34375,29.3125 1.71875,0 1.65625,3.5 0.03125,0.75 -0.53125,2.4375 3.25,1.3125 1.3125,-2.0625 0.59375,-0.53125 3.59375,-1.25 1.25,1.21875 -1.28125,3.59375 -0.5,0.59375 -2.0625,1.3125 1.3125,3.28125 2.40625,-0.5625 0.78125,0.03125 3.46875,1.65625 0,1.75 -3.46875,1.65625 -0.78125,0 -2.40625,-0.5 -1.3125,3.21875 2.0625,1.375 0.5,0.59375 1.28125,3.59375 -1.25,1.25 -3.59375,-1.28125 -0.59375,-0.5625 -1.3125,-2.0625 -3.25,1.34375 0.53125,2.40625 -0.03125,0.78125 -1.65625,3.4375 -1.71875,0 -1.65625,-3.4375 -0.0625,-0.78125 0.53125,-2.40625 -3.25,-1.34375 -1.3125,2.0625 -0.59375,0.5625 -3.59375,1.28125 -1.25,-1.25 1.28125,-3.59375 0.5625,-0.59375 2.0625,-1.375 -1.34375,-3.21875 -2.40625,0.5 -0.8125,0 -3.46875,-1.65625 0,-1.75 3.46875,-1.65625 0.8125,-0.03125 2.40625,0.5625 1.34375,-3.28125 -2.0625,-1.3125 -0.5625,-0.59375 L 36,45.921875 l 1.25,-1.21875 3.59375,1.25 0.59375,0.53125 1.3125,2.0625 3.25,-1.3125 -0.53125,-2.4375 0.0625,-0.75 1.65625,-3.5 z m 0.875,10.875 c -2.927972,0 -5.34375,2.353278 -5.34375,5.28125 0,2.927972 2.415778,5.3125 5.34375,5.3125 2.927972,0 5.28125,-2.384528 5.28125,-5.3125 0,-2.927972 -2.353278,-5.28125 -5.28125,-5.28125 z m 18.15625,10.3125 3.09375,3.34375 0.46875,1.15625 0.40625,2.75 4.46875,0 0.40625,-2.75 0.4375,-1.15625 3.125,-3.34375 2.25,0.71875 0.53125,4.53125 -0.28125,1.21875 -1.3125,2.4375 3.625,2.65625 1.90625,-2 1.0625,-0.625 4.5,-0.90625 1.375,1.90625 -2.21875,3.96875 -0.96875,0.8125 -2.46875,1.1875 1.40625,4.28125 2.71875,-0.46875 1.21875,0.09375 4.15625,1.90625 0,2.34375 -4.15625,1.9375 -1.21875,0.09375 -2.71875,-0.46875 -1.40625,4.25 2.46875,1.21875 0.96875,0.78125 2.21875,4.03125 -1.375,1.875 -4.5,-0.875 -1.0625,-0.65625 -1.90625,-2 -3.625,2.65625 1.3125,2.406255 0.28125,1.21875 -0.53125,4.5625 -2.25,0.75 -3.125,-3.40625 -0.4375,-1.125 -0.40625,-2.71875 -4.46875,0 -0.40625,2.71875 -0.46875,1.125 -3.09375,3.40625 -2.25,-0.75 -0.53125,-4.5625 0.3125,-1.21875 1.28125,-2.406255 -3.625,-2.65625 -1.9375,2 -1.0625,0.65625 -4.46875,0.875 -1.375,-1.875 2.21875,-4.03125 0.9375,-0.78125 2.46875,-1.21875 -1.34375,-4.25 -2.71875,0.46875 -1.21875,-0.09375 -4.1875,-1.9375 0,-2.34375 4.1875,-1.90625 1.21875,-0.09375 2.71875,0.46875 1.34375,-4.28125 -2.46875,-1.1875 -0.9375,-0.8125 -2.21875,-3.96875 1.375,-1.90625 4.46875,0.90625 1.0625,0.625 1.9375,2 3.625,-2.65625 -1.28125,-2.4375 -0.3125,-1.21875 0.53125,-4.53125 2.25,-0.71875 z m 6.1875,14.09375 c -4.866236,0 -8.8125,3.946264 -8.8125,8.8125 0,4.866238 3.946264,8.8125 8.8125,8.8125 4.866237,0 8.8125,-3.946262 8.8125,-8.8125 0,-4.866236 -3.946263,-8.8125 -8.8125,-8.8125 z"/></svg>' },
   'dockerfile': { label: 'DK', color: '#2496ed', icon: 'docker' },
-  'license':    { label: '§',  color: '#d0bf41' },
+  'license':    { label: '§',  color: '#d0bf41', svg: '<path opacity="0.15" d="M12 17H7C5.89543 17 5 16.1046 5 15V5C5 3.89543 5.89543 3 7 3H16C17.1046 3 18 3.89543 18 5V19C18 20.1046 17.1046 21 16 21C14.8954 21 14 20.1046 14 19C14 17.8954 13.1046 17 12 17Z" fill="currentColor"/><path d="M19 3H9C7.11438 3 6.17157 3 5.58579 3.58579C5 4.17157 5 5.11438 5 7V10.5V17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 17V19C14 20.1046 14.8954 21 16 21C17.1046 21 18 20.1046 18 19V9V4.5C18 3.67157 18.6716 3 19.5 3C20.3284 3 21 3.67157 21 4.5C21 5.32843 20.3284 6 19.5 6H18.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 21H5C3.89543 21 3 20.1046 3 19C3 17.8954 3.89543 17 5 17H14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 7H14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M9 11H14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' },
 };
 const FILE_BADGE_DEFAULT = { fileGlyph: true, color: '#b8bec8' };
 const FILE_BADGE_EXEC    = { fileGlyph: true, color: '#ffffff' };
@@ -283,7 +288,11 @@ function buildTreeList(entries, parentPath) {
       const badge = badgeForFile(entry.name, !!entry.exec);
       const iconPath = badge.icon && window.FILE_ICON_PATHS && window.FILE_ICON_PATHS[badge.icon];
       const chip = document.createElement('span');
-      if (badge.svg) {
+      if (badge.rawSvg) {
+        // Full SVG markup (custom viewBox, multi-color).
+        chip.className = 'file-logo';
+        chip.innerHTML = badge.rawSvg;
+      } else if (badge.svg) {
         // Raw multi-element SVG (e.g. stroke-based icons).
         chip.className = 'file-logo';
         chip.style.color = badge.color;
@@ -590,7 +599,7 @@ function promptModal(opts) {
     btnOk.textContent = opts.confirmLabel || 'OK';
 
     overlay.style.display = 'flex';
-    if (!navigator.maxTouchPoints) { input.focus(); input.select(); }
+    setTimeout(() => { input.focus(); input.select(); }, 50);
 
     function finish(val) {
       overlay.style.display = 'none';
@@ -887,8 +896,11 @@ async function pasteEntry(targetDir) {
   const { path: src, isDir, mode } = clipboard;
   let name = src.split('/').pop();
   let dest = targetDir ? targetDir + '/' + name : name;
-  if (isDir && (dest === src || dest.startsWith(src + '/'))) {
+  if (isDir && dest.startsWith(src + '/')) {
     _crudError('Cannot paste a folder into itself.'); return;
+  }
+  if (mode === 'cut' && dest === src) {
+    _crudError('Cannot move a folder into itself.'); return;
   }
   const endpoint = mode === 'cut' ? '/api/rename' : '/api/copy';
   let res = await fetch(endpoint, {
@@ -934,8 +946,12 @@ async function pasteSelectedEntries(targetDir) {
     const item = pending[0];
     let name = item.path.split('/').pop();
     let dest = targetDir ? targetDir + '/' + name : name;
-    if (item.isDir && (targetDir === item.path || targetDir.startsWith(item.path + '/'))) {
+    if (item.isDir && targetDir.startsWith(item.path + '/')) {
       _crudError('Cannot paste a folder into itself.');
+      return;
+    }
+    if (mode === 'cut' && item.isDir && targetDir === item.path) {
+      _crudError('Cannot move a folder into itself.');
       return;
     }
     const endpoint = mode === 'cut' ? '/api/rename' : '/api/copy';
@@ -1015,8 +1031,15 @@ function saveActiveTabContent() {
  * @param {string} filePath
  */
 function activateTab(filePath) {
-  // Hide any change banner for the tab we're leaving.
-  if (activeTab && activeTab !== filePath) hideChangeBanner(activeTab);
+  // Hide any change/deleted banner for the tab we're leaving.
+  if (activeTab && activeTab !== filePath) {
+    hideChangeBanner(activeTab);
+    const delBanner = document.getElementById('deleted-banner');
+    if (delBanner && _deletedBannerPath === activeTab) {
+      delBanner.classList.remove('visible');
+      _deletedBannerPath = null;
+    }
+  }
   // Save content of current tab before leaving it.
   saveActiveTabContent();
 
@@ -1069,7 +1092,10 @@ function createTab(filePath) {
   const badge = badgeForFile(name, false);
   const iconPath = badge.icon && window.FILE_ICON_PATHS && window.FILE_ICON_PATHS[badge.icon];
   const iconEl = document.createElement('span');
-  if (badge.svg) {
+  if (badge.rawSvg) {
+    iconEl.className = 'file-logo tab-icon';
+    iconEl.innerHTML = badge.rawSvg;
+  } else if (badge.svg) {
     iconEl.className = 'file-logo tab-icon';
     iconEl.style.color = badge.color;
     iconEl.innerHTML =
@@ -1488,6 +1514,39 @@ function hideChangeBanner(filePath) {
 }
 
 /**
+ * Show a red banner when the active file has been deleted from disk.
+ * @param {string} filePath
+ */
+function showDeletedBanner(filePath) {
+  if (_deletedBannerPath === filePath) return;
+  const banner = document.getElementById('deleted-banner');
+  const msg = document.getElementById('deleted-banner-msg');
+  const btnClose = document.getElementById('deleted-banner-close');
+  const btnKeep = document.getElementById('deleted-banner-keep');
+  if (!banner) return;
+
+  const name = filePath.split('/').pop();
+  msg.textContent = '"' + name + '" was deleted from disk.';
+  _deletedBannerPath = filePath;
+  banner.classList.add('visible');
+
+  const newClose = btnClose.cloneNode(true);
+  const newKeep = btnKeep.cloneNode(true);
+  btnClose.replaceWith(newClose);
+  btnKeep.replaceWith(newKeep);
+
+  newClose.addEventListener('click', () => {
+    banner.classList.remove('visible');
+    _deletedBannerPath = null;
+    closeTab(filePath);
+  });
+  newKeep.addEventListener('click', () => {
+    banner.classList.remove('visible');
+    _deletedBannerPath = null;
+  });
+}
+
+/**
  * On window focus, check if the active file was modified on disk since we loaded it.
  */
 async function checkActiveFileForExternalChange() {
@@ -1497,6 +1556,10 @@ async function checkActiveFileForExternalChange() {
   _changeCheckInFlight = true;
   try {
     const res = await fetch('/api/file?path=' + encodeURIComponent(activeTab));
+    if (res.status === 404) {
+      showDeletedBanner(activeTab);
+      return;
+    }
     if (!res.ok) return;
     const mtime = res.headers.get('X-File-Mtime');
     if (!file.diskMtime) {
@@ -1779,6 +1842,37 @@ function init() {
     if (!document.hidden && !sidebar.classList.contains('hidden')) syncExplorerOnce();
   });
 
+  // Swipe-from-left-edge to open sidebar.
+  (function() {
+    const EDGE_ZONE = 24; // px from left edge that starts a swipe
+    const MIN_SWIPE = 60; // minimum horizontal distance to trigger open
+    let _swipeStartX = null;
+    let _swipeStartY = null;
+    let _swipeTracking = false;
+    document.addEventListener('touchstart', (e) => {
+      if (!sidebar.classList.contains('hidden')) return;
+      const t = e.touches[0];
+      if (t.clientX <= EDGE_ZONE) {
+        _swipeStartX = t.clientX;
+        _swipeStartY = t.clientY;
+        _swipeTracking = true;
+      }
+    }, { passive: true });
+    document.addEventListener('touchmove', (e) => {
+      if (!_swipeTracking) return;
+      const t = e.touches[0];
+      const dx = t.clientX - _swipeStartX;
+      const dy = Math.abs(t.clientY - _swipeStartY);
+      // Cancel if mostly vertical
+      if (dy > dx) { _swipeTracking = false; return; }
+      if (dx >= MIN_SWIPE) {
+        _swipeTracking = false;
+        openSidebar();
+      }
+    }, { passive: true });
+    document.addEventListener('touchend', () => { _swipeTracking = false; }, { passive: true });
+  })();
+
   // Helpers for keyboard shortcuts and paste target resolution.
   function _selectedRow() {
     const el = fileTree.querySelector('.tree-item.selected');
@@ -1808,8 +1902,8 @@ function init() {
   fileTree.addEventListener('touchmove',  () => { clearTimeout(_bgLpTimer); _bgLpTimer = null; }, { passive: true });
   fileTree.addEventListener('touchend',   () => { clearTimeout(_bgLpTimer); _bgLpTimer = null; }, { passive: true });
 
-  // Close sidebar after opening a file on mobile (small screens).
-  window._closeSidebarIfMobile = () => { if (window.innerWidth < 768) closeSidebar(); };
+  // Close sidebar after opening a file (always — user clicked a file, they want to see it).
+  window._closeSidebarIfMobile = () => { closeSidebar(); };
 
   // Persist folds whenever the user toggles one via gutter/pill.
   editor.onfoldchange = () => {

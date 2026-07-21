@@ -4,9 +4,7 @@
 
 # Local editor state and scratch projects
 /.coded/
-/.testfolder/
 /testfolder/
-/.worktrees/
 
 # Environment files and secrets
 .env
