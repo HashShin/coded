@@ -2248,9 +2248,48 @@ function showUpdateBanner(info) {
 
   newNow.addEventListener('click', () => {
     if (info.viaPkg) {
-      msg.textContent = 'Run "pkg upgrade coded" in your terminal, then restart coded.';
-      newNow.remove();
-      newSkip.remove();
+      // Stream pkg upgrade output into the log box.
+      [newNow, newSkip, newLater].forEach(b => { b.style.display = 'none'; });
+      const logBox = document.getElementById('update-log');
+      if (logBox) { logBox.hidden = false; logBox.textContent = ''; }
+      msg.textContent = 'Upgrading via pkg\u2026';
+
+      const es = new EventSource('/api/update/install');
+      es.addEventListener('log', e => {
+        try {
+          const line = JSON.parse(e.data);
+          if (logBox) { logBox.textContent += line + '\n'; logBox.scrollTop = logBox.scrollHeight; }
+        } catch (_) {}
+      });
+      es.addEventListener('done', () => {
+        es.close();
+        if (logBox) logBox.hidden = true;
+        msg.textContent = 'Update installed! Restart to apply.';
+        newNow.textContent = 'Restart now';
+        newNow.style.display = '';
+        newLater.textContent = 'Later';
+        newLater.style.display = '';
+        newNow.onclick = () => {
+          fetch('/api/update/restart', { method: 'POST' }).catch(() => {});
+          newNow.style.display = 'none'; newLater.style.display = 'none';
+          if (logBox) { logBox.hidden = false; logBox.textContent = 'Restarting\u2026'; }
+          msg.textContent = 'Restarting\u2026 this page will reload automatically.';
+          waitForServer(() => {
+            msg.textContent = 'If this page didn\u2019t reload, re-run coded in your terminal and refresh.';
+          }, undefined, () => {
+            if (logBox) { logBox.textContent += '\nDone! Reloading\u2026'; logBox.scrollTop = logBox.scrollHeight; }
+          });
+        };
+        newLater.onclick = () => { banner.classList.remove('visible'); };
+      });
+      es.addEventListener('error', e => {
+        es.close();
+        if (logBox) logBox.hidden = true;
+        let errMsg = 'pkg upgrade failed.';
+        try { const d = JSON.parse(e.data); if (d && d.message) errMsg = d.message; } catch (_) {}
+        msg.textContent = errMsg + ' Try `pkg upgrade coded` in your terminal.';
+        [newNow, newSkip, newLater].forEach(b => { b.style.display = ''; });
+      });
       return;
     }
 

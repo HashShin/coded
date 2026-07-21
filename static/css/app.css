@@ -1562,6 +1562,23 @@ mark.search-match.current { background: rgba(255,160,0,0.7); }
   width: 100%;
 }
 .update-progress[hidden] { display: none !important; }
+.update-log {
+  flex: 1 1 100%;
+  max-height: 120px;
+  overflow-y: auto;
+  background: #071a2b;
+  border: 1px solid #1f5c8c;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-family: monospace;
+  font-size: 11px;
+  color: #7ab8e8;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-top: 6px;
+  line-height: 1.5;
+}
+.update-log[hidden] { display: none !important; }
 .update-progress-track {
   flex: 1;
   height: 5px;

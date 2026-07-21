@@ -1,10 +1,13 @@
 package server
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/exec"
 	"time"
 )
 
@@ -41,17 +44,13 @@ func handleUpdateSkip() http.HandlerFunc {
 	}
 }
 
-// handleUpdateInstall serves GET /api/update/install — streams download progress via SSE,
-// downloads the latest release asset, and atomically replaces the running binary.
-// Only available for non-pkg installs.
+// handleUpdateInstall serves GET /api/update/install — streams update progress via SSE.
+// For non-pkg installs: streams byte-level download progress as JSON messages.
+// For pkg installs: runs `pkg upgrade -y coded` and streams its output as log lines.
 func handleUpdateInstall(version string, viaPkg bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if viaPkg {
-			writeJSONError(w, "managed by pkg", http.StatusBadRequest)
 			return
 		}
 		info := CheckForUpdate(version, viaPkg)
@@ -81,6 +80,17 @@ func handleUpdateInstall(version string, viaPkg bool) http.HandlerFunc {
 			flusher.Flush()
 		}
 
+		if viaPkg {
+			// Stream pkg upgrade output line by line.
+			if err := runPkgUpgrade(w, flusher, sseMsg); err != nil {
+				errJSON, _ := json.Marshal(map[string]string{"message": err.Error()})
+				sseMsg("error", string(errJSON))
+				return
+			}
+			sseMsg("done", "{}")
+			return
+		}
+
 		progress := func(downloaded, total int64) {
 			sseMsg("", fmt.Sprintf(`{"downloaded":%d,"total":%d}`, downloaded, total))
 		}
@@ -92,6 +102,39 @@ func handleUpdateInstall(version string, viaPkg bool) http.HandlerFunc {
 		}
 		sseMsg("done", "{}")
 	}
+}
+
+// runPkgUpgrade runs `pkg upgrade -y coded` and streams each output line as an SSE log event.
+func runPkgUpgrade(w http.ResponseWriter, flusher http.Flusher, sseMsg func(event, data string)) error {
+	cmd := exec.Command("pkg", "upgrade", "-y", "coded")
+	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	cmd.Stdout = pw
+	cmd.Stderr = pw
+
+	if err := cmd.Start(); err != nil {
+		pw.Close()
+		pr.Close()
+		return err
+	}
+	pw.Close() // close write-end in parent so EOF propagates
+
+	scanner := bufio.NewScanner(pr)
+	for scanner.Scan() {
+		line := scanner.Text()
+		lineJSON, _ := json.Marshal(line)
+		sseMsg("log", string(lineJSON))
+	}
+	pr.Close()
+
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("pkg upgrade failed: %w", err)
+	}
+	return nil
 }
 
 // handleUpdateRestart serves POST /api/update/restart — responds OK then re-execs
