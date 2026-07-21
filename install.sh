@@ -35,7 +35,8 @@ if [ -z "$TAG" ]; then
   exit 1
 fi
 
-FILENAME="${BINARY}_${OS}_${ARCH}"
+VERSION="${TAG#v}"
+FILENAME="${BINARY}_${VERSION}_${OS}_${ARCH}"
 URL="https://github.com/${REPO}/releases/download/${TAG}/${FILENAME}"
 
 echo "Installing coded ${TAG} for ${OS}/${ARCH}..."

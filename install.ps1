@@ -22,7 +22,8 @@ if (-not $Tag) {
     exit 1
 }
 
-$Filename = "${Binary}_windows_${Arch}.exe"
+$Version = $Tag.TrimStart("v")
+$Filename = "${Binary}_${Version}_windows_${Arch}.exe"
 $Url = "https://github.com/$Repo/releases/download/$Tag/$Filename"
 
 Write-Host "Installing coded $Tag for windows/$Arch..."
