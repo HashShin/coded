@@ -2007,6 +2007,36 @@ function init() {
       vBadge.textContent = v ? 'v' + v : '—';
     }
   }
+
+  const btnCheckUpdate = document.getElementById('btn-check-update');
+  const updateStatus = document.getElementById('settings-update-status');
+  if (btnCheckUpdate) {
+    btnCheckUpdate.addEventListener('click', async () => {
+      btnCheckUpdate.disabled = true;
+      btnCheckUpdate.textContent = 'Checking\u2026';
+      if (updateStatus) { updateStatus.hidden = false; updateStatus.textContent = ''; }
+      try {
+        // Reset cache so we hit the network fresh.
+        await fetch('/api/update/refresh', { method: 'POST' });
+        const res = await fetch('/api/update' + _devPkg);
+        if (!res.ok) throw new Error('server error');
+        const info = await res.json();
+        _updateInfo = info;
+        if (info.available) {
+          if (updateStatus) updateStatus.hidden = true;
+          closeSettings();
+          showUpdateBanner(info);
+        } else {
+          if (updateStatus) updateStatus.textContent = 'You\u2019re up to date' + (info.current ? ' (v' + info.current + ')' : '') + '.';
+        }
+      } catch (_) {
+        if (updateStatus) updateStatus.textContent = 'Check failed. Are you online?';
+      } finally {
+        btnCheckUpdate.disabled = false;
+        btnCheckUpdate.textContent = 'Check for updates';
+      }
+    });
+  }
   function closeSettings() { if (settingsOverlay) settingsOverlay.style.display = 'none'; }
 
   if (btnSettings) btnSettings.addEventListener('click', openSettings);

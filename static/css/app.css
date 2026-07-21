@@ -313,6 +313,24 @@ details[open] .settings-chevron {
 .settings-link:hover {
   text-decoration: underline;
 }
+.settings-check-update-btn {
+  font-size: 12px;
+  color: #9ecbff;
+  background: #0e3a5c;
+  border: 1px solid #1f5c8c;
+  border-radius: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.settings-check-update-btn:hover { background: #007acc; border-color: #007acc; color: #fff; }
+.settings-check-update-btn:disabled { opacity: 0.5; cursor: default; }
+.settings-update-status {
+  font-size: 12px;
+  color: #aaa;
+  padding: 2px 0 0;
+}
+.settings-update-status[hidden] { display: none; }
 .stepper {
   display: flex;
   align-items: center;

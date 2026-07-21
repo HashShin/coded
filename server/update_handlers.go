@@ -26,6 +26,24 @@ func handleUpdate(version string, viaPkg bool) http.HandlerFunc {
 	}
 }
 
+// handleUpdateRefresh serves POST /api/update/refresh — resets the cache
+// so the next CheckForUpdate call hits the network again.
+func handleUpdateRefresh() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		cacheMu.Lock()
+		c := loadCache()
+		c.LastChecked = time.Time{} // zero → force re-fetch
+		saveCache(c)
+		cacheMu.Unlock()
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Write([]byte(`{"ok":true}`))
+	}
+}
+
 // handleUpdateSkip serves POST /api/update/skip — records a skipped version.
 func handleUpdateSkip() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

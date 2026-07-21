@@ -38,6 +38,7 @@ func Start(root, version string, viaPkg bool, port int, ln net.Listener, assets 
 	mux.HandleFunc("/api/copy", handleCopy(root))
 	mux.HandleFunc("/api/update", handleUpdate(version, viaPkg))
 	mux.HandleFunc("/api/update/skip", handleUpdateSkip())
+	mux.HandleFunc("/api/update/refresh", handleUpdateRefresh())
 	mux.HandleFunc("/api/update/install", handleUpdateInstall(version, viaPkg))
 	mux.HandleFunc("/api/update/restart", handleUpdateRestart(port))
 
