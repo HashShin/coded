@@ -2009,7 +2009,8 @@ function init() {
     const chip = document.getElementById('btn-update-chip');
     if (chip && _updateInfo) {
       if (_updateInfo.available) {
-        chip.textContent = '\u2b06 ' + _updateInfo.latest;
+        chip.textContent = '\u2b06';
+        chip.title = 'Update available: v' + _updateInfo.latest;
         chip.hidden = false;
       } else {
         chip.hidden = true;
@@ -2042,7 +2043,7 @@ function init() {
         if (info.available) {
           if (updateStatus) updateStatus.hidden = true;
           const chip = document.getElementById('btn-update-chip');
-          if (chip) { chip.textContent = '\u2b06 ' + info.latest; chip.hidden = false; }
+          if (chip) { chip.textContent = '\u2b06'; chip.title = 'Update available: v' + info.latest; chip.hidden = false; }
           if (updateStatus) { updateStatus.hidden = false; updateStatus.textContent = 'coded ' + info.latest + ' is available!'; }
         } else {
           if (updateStatus) updateStatus.textContent = 'You\u2019re up to date' + (info.current ? ' (v' + info.current + ')' : '') + '.';
