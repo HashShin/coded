@@ -42,11 +42,11 @@ func installedViaPkg() bool {
 }
 
 // runUninstall removes the coded binary from disk.
-// For pkg-managed installs it defers to `pkg uninstall coded`.
+// For pkg-managed installs it defers to `pkg remove coded`.
 func runUninstall() int {
 	if installedViaPkg() {
 		fmt.Println("coded was installed via pkg. Uninstall it with:")
-		fmt.Println("  pkg uninstall coded")
+		fmt.Println("  pkg remove coded")
 		return 0
 	}
 
