@@ -2025,6 +2025,8 @@ function init() {
         if (info.available) {
           closeSettings();
           showUpdateBanner(info);
+        } else if (info.error) {
+          if (updateStatus) updateStatus.textContent = 'Check failed. Are you online?';
         } else {
           if (updateStatus) updateStatus.textContent = 'You\u2019re up to date' + (info.current ? ' (v' + info.current + ')' : '') + '.';
         }

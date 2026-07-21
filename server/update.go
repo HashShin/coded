@@ -30,6 +30,7 @@ type UpdateInfo struct {
 	Latest    string `json:"latest"`
 	Available bool   `json:"available"`
 	ViaPkg    bool   `json:"viaPkg"`
+	Error     string `json:"error,omitempty"`
 }
 
 // updateCache is persisted to ~/.config/coded/update.json.
@@ -124,7 +125,7 @@ func fetchLatestVersionViaPkg() (string, error) {
 
 // fetchLatestVersion queries GitHub for the latest release tag (without leading "v").
 func fetchLatestVersion() (string, error) {
-	client := &http.Client{Timeout: 3 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, githubLatestURL, nil)
 	if err != nil {
 		return "", err
@@ -171,6 +172,9 @@ func CheckForUpdate(current string, viaPkg bool, ignoreSkip bool) UpdateInfo {
 			c.LatestVersion = fetched
 			c.LastChecked = time.Now()
 			saveCache(c)
+		} else if fetchErr != nil && latest == "" {
+			// Fetch failed and no cached result to fall back on — surface the error.
+			info.Error = "could not reach GitHub: " + fetchErr.Error()
 		}
 	}
 	skipped := c.SkippedVersion
