@@ -26,13 +26,10 @@ builds:
       - "7"
 
 archives:
-  - formats: [tar.gz]
+  - formats: [binary]
     format_overrides:
       - goos: windows
-        formats: [zip]
-    files:
-      - LICENSE
-      - README.md
+        formats: [binary]
 
 checksum:
   name_template: "checksums.txt"

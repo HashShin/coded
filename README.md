@@ -27,9 +27,19 @@
 
 ## Install
 
-### Termux (Android)
+### Linux / macOS
 
-If you use Termux, install coded directly with `pkg`:
+```sh
+curl -fsSL https://raw.githubusercontent.com/HashShin/coded/main/install.sh | sh
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/HashShin/coded/main/install.ps1 | iex
+```
+
+### Termux (Android)
 
 ```sh
 pkg install tur-repo
