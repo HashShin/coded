@@ -22,8 +22,9 @@ func openBrowser(url string) {
 	case "windows":
 		cmd = exec.Command("cmd", "/c", "start", url)
 	default: // linux
-		// Prefer termux-open-url if available (Termux on Android reports linux).
-		if _, err := exec.LookPath("termux-open-url"); err == nil {
+		// Termux on Android reports GOOS=linux but has a restricted kernel.
+		// Detect Termux via environment variable to avoid faccessat2 crash.
+		if os.Getenv("TERMUX_VERSION") != "" || os.Getenv("PREFIX") == "/data/data/com.termux/files/usr" {
 			cmd = exec.Command("termux-open-url", url)
 		} else {
 			cmd = exec.Command("xdg-open", url)
