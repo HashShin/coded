@@ -38,6 +38,8 @@ func Start(root, version string, viaPkg bool, ln net.Listener, assets embed.FS) 
 	mux.HandleFunc("/api/copy", handleCopy(root))
 	mux.HandleFunc("/api/update", handleUpdate(version, viaPkg))
 	mux.HandleFunc("/api/update/skip", handleUpdateSkip())
+	mux.HandleFunc("/api/update/install", handleUpdateInstall(version, viaPkg))
+	mux.HandleFunc("/api/update/restart", handleUpdateRestart())
 
 	// Live static preview of the editor's working directory.
 	// Serves root at /preview/ so relative imports (CSS, JS, images) resolve naturally.

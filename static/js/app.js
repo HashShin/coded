@@ -2203,8 +2203,19 @@ async function checkForUpdate() {
   }
 }
 
+function fmtMB(bytes) {
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function waitForServer() {
+  setTimeout(() => {
+    fetch('/').then(() => location.reload()).catch(() => waitForServer());
+  }, 700);
+}
+
 /**
  * Show the update-available banner with Update now / Skip / Remind later.
+ * For non-pkg installs, Update now triggers a live SSE download with progress bar.
  * @param {{current:string, latest:string, viaPkg:boolean}} info
  */
 function showUpdateBanner(info) {
@@ -2227,11 +2238,60 @@ function showUpdateBanner(info) {
   btnLater.replaceWith(newLater);
 
   newNow.addEventListener('click', () => {
-    // The browser can't replace the running binary; instruct the user instead.
-    const cmd = info.viaPkg ? 'pkg upgrade coded' : 'coded update';
-    msg.textContent = 'Run "' + cmd + '" in your terminal, then restart coded.';
-    newNow.remove();
-    newSkip.remove();
+    if (info.viaPkg) {
+      msg.textContent = 'Run "pkg upgrade coded" in your terminal, then restart coded.';
+      newNow.remove();
+      newSkip.remove();
+      return;
+    }
+
+    // Hide action buttons, show progress bar.
+    [newNow, newSkip, newLater].forEach(b => { b.style.display = 'none'; });
+    const progress = document.getElementById('update-progress');
+    const fill = document.getElementById('update-progress-fill');
+    const ptext = document.getElementById('update-progress-text');
+    if (progress) progress.hidden = false;
+    msg.textContent = 'Downloading coded ' + info.latest + '\u2026';
+
+    const es = new EventSource('/api/update/install');
+
+    es.addEventListener('message', e => {
+      try {
+        const d = JSON.parse(e.data);
+        const pct = d.total > 0 ? Math.round(d.downloaded / d.total * 100) : 0;
+        if (fill) fill.style.width = pct + '%';
+        if (ptext) ptext.textContent = pct + '%  ' + fmtMB(d.downloaded) + ' / ' + fmtMB(d.total);
+      } catch (_) {}
+    });
+
+    es.addEventListener('done', () => {
+      es.close();
+      if (progress) progress.hidden = true;
+      msg.textContent = 'Update installed! Restart to apply.';
+      newNow.textContent = 'Restart now';
+      newNow.style.display = '';
+      newLater.style.display = '';
+      newNow.onclick = () => {
+        msg.textContent = 'Restarting\u2026';
+        newNow.style.display = 'none';
+        newLater.style.display = 'none';
+        fetch('/api/update/restart', { method: 'POST' }).catch(() => {});
+        waitForServer();
+      };
+      newLater.onclick = () => { banner.classList.remove('visible'); };
+    });
+
+    es.addEventListener('error', e => {
+      es.close();
+      if (progress) progress.hidden = true;
+      let errMsg = 'Update failed.';
+      try {
+        const d = JSON.parse(e.data);
+        if (d && d.message) errMsg = 'Update failed: ' + d.message;
+      } catch (_) {}
+      msg.textContent = errMsg + ' Try `coded update` in your terminal.';
+      [newNow, newSkip, newLater].forEach(b => { b.style.display = ''; });
+    });
   });
 
   newSkip.addEventListener('click', () => {

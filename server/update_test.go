@@ -1,8 +1,12 @@
 package server
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -120,5 +124,90 @@ func TestUpdateInfo_ViaPkgPassedThrough(t *testing.T) {
 	info := CheckForUpdate("0.1.0", true)
 	if !info.ViaPkg {
 		t.Fatalf("expected ViaPkg true, got %+v", info)
+	}
+}
+
+func TestAssetName(t *testing.T) {
+	name := assetName("0.1.3")
+	if !strings.HasPrefix(name, "coded_0.1.3_") {
+		t.Fatalf("unexpected asset name: %s", name)
+	}
+	// Must have exactly 3 underscore-separated parts after "coded"
+	parts := strings.Split(name, "_")
+	if len(parts) != 4 {
+		t.Fatalf("expected 4 parts in asset name, got %d: %s", len(parts), name)
+	}
+}
+
+func TestAssetURL(t *testing.T) {
+	orig := githubDownloadBase
+	githubDownloadBase = "https://example.com/releases"
+	t.Cleanup(func() { githubDownloadBase = orig })
+
+	url := assetURL("0.1.3")
+	if !strings.HasPrefix(url, "https://example.com/releases/v0.1.3/coded_0.1.3_") {
+		t.Fatalf("unexpected asset URL: %s", url)
+	}
+}
+
+// mockDownloadServer returns a test server that serves fakeContent as a binary download,
+// and patches githubDownloadBase to point at it for the duration of the test.
+func mockDownloadServer(t *testing.T, fakeContent []byte) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", string(rune(len(fakeContent))))
+		w.WriteHeader(http.StatusOK)
+		w.Write(fakeContent)
+	}))
+	t.Cleanup(srv.Close)
+	orig := githubDownloadBase
+	// The handler above serves all paths, so any URL under srv.URL works.
+	// assetURL builds: base + "/v" + version + "/" + name
+	// We strip the path portion by pointing base at srv.URL directly.
+	githubDownloadBase = srv.URL
+	t.Cleanup(func() { githubDownloadBase = orig })
+}
+
+func TestDownloadAndInstall(t *testing.T) {
+	// Create a fake "exe" in a temp dir that DownloadAndInstall will replace.
+	dir := t.TempDir()
+	exePath := filepath.Join(dir, "coded")
+	if err := os.WriteFile(exePath, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeContent := bytes.Repeat([]byte{0xCA, 0xFE}, 512) // 1KB fake binary
+
+	// Serve the fake content with correct Content-Length.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		http.ServeContent(w, r, "coded", time.Time{}, bytes.NewReader(fakeContent))
+	}))
+	t.Cleanup(srv.Close)
+
+	orig := githubDownloadBase
+	githubDownloadBase = srv.URL
+	t.Cleanup(func() { githubDownloadBase = orig })
+
+	// Override the exe path resolution by using downloadAndInstallTo (internal helper).
+	// Since we can't redirect os.Executable(), use the exported wrapper with a target override.
+	// Instead call the internal logic directly via downloadTo.
+	var progressCalls int
+	err := downloadAndInstallTo(exePath, "0.1.3", func(dl, total int64) {
+		progressCalls++
+	})
+	if err != nil {
+		t.Fatalf("DownloadAndInstall failed: %v", err)
+	}
+
+	got, err := os.ReadFile(exePath)
+	if err != nil {
+		t.Fatalf("read replaced exe: %v", err)
+	}
+	if !bytes.Equal(got, fakeContent) {
+		t.Fatalf("replaced content mismatch: got %d bytes, want %d", len(got), len(fakeContent))
+	}
+	if progressCalls == 0 {
+		t.Fatal("expected at least one progress callback")
 	}
 }

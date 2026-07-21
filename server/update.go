@@ -2,10 +2,13 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -184,4 +187,118 @@ func SkipVersion(v string) {
 	c := loadCache()
 	c.SkippedVersion = v
 	saveCache(c)
+}
+
+// githubDownloadBase is the base URL for release asset downloads.
+// It is a package var so tests can point it at an httptest.Server.
+var githubDownloadBase = "https://github.com/HashShin/coded/releases/download"
+
+// ProgressFn is called periodically during a download with bytes received and total size.
+type ProgressFn func(downloaded, total int64)
+
+// assetGOOS returns the GOOS string for the release asset name, mapping Termux to "android".
+func assetGOOS() string {
+	if os.Getenv("TERMUX_VERSION") != "" || os.Getenv("PREFIX") == "/data/data/com.termux/files/usr" {
+		return "android"
+	}
+	return runtime.GOOS
+}
+
+// assetName returns the release asset filename for the given version.
+func assetName(version string) string {
+	return fmt.Sprintf("coded_%s_%s_%s", version, assetGOOS(), runtime.GOARCH)
+}
+
+// assetURL returns the full download URL for the given version.
+func assetURL(version string) string {
+	return githubDownloadBase + "/v" + version + "/" + assetName(version)
+}
+
+// countingReader wraps an io.Reader and calls progress every throttleBytes bytes or throttleDur.
+type countingReader struct {
+	r            io.Reader
+	total        int64
+	downloaded   int64
+	progress     ProgressFn
+	lastReport   time.Time
+	sinceReport  int64
+}
+
+const throttleBytes = 64 * 1024 // 64KB
+const throttleDur = 100 * time.Millisecond
+
+func (cr *countingReader) Read(p []byte) (int, error) {
+	n, err := cr.r.Read(p)
+	if n > 0 {
+		cr.downloaded += int64(n)
+		cr.sinceReport += int64(n)
+		if cr.sinceReport >= throttleBytes || time.Since(cr.lastReport) >= throttleDur {
+			cr.progress(cr.downloaded, cr.total)
+			cr.lastReport = time.Now()
+			cr.sinceReport = 0
+		}
+	}
+	return n, err
+}
+
+// downloadAndInstallTo downloads the release asset for version and atomically replaces
+// the file at targetExe. progress is called periodically with bytes received and total size.
+func downloadAndInstallTo(targetExe, version string, progress ProgressFn) error {
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Get(assetURL(version))
+	if err != nil {
+		return fmt.Errorf("download: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download: server returned %s", resp.Status)
+	}
+
+	tmp, err := os.CreateTemp(filepath.Dir(targetExe), ".coded-update-*")
+	if err != nil {
+		return fmt.Errorf("create temp: %w", err)
+	}
+	tmpPath := tmp.Name()
+	cleanup := func() { tmp.Close(); os.Remove(tmpPath) }
+
+	cr := &countingReader{
+		r:          resp.Body,
+		total:      resp.ContentLength,
+		progress:   progress,
+		lastReport: time.Now(),
+	}
+	if _, err := io.Copy(tmp, cr); err != nil {
+		cleanup()
+		return fmt.Errorf("write: %w", err)
+	}
+	// Report final state on completion.
+	if progress != nil {
+		progress(cr.downloaded, cr.total)
+	}
+	if err := tmp.Chmod(0o755); err != nil {
+		cleanup()
+		return fmt.Errorf("chmod: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("close: %w", err)
+	}
+	if err := os.Rename(tmpPath, targetExe); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("install: %w", err)
+	}
+	return nil
+}
+
+// DownloadAndInstall downloads the release asset for version, replaces the running binary,
+// and reports progress via progress. It is a no-op for pkg-managed installs (callers should guard).
+func DownloadAndInstall(version string, progress ProgressFn) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate binary: %w", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	return downloadAndInstallTo(exe, version, progress)
 }

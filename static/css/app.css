@@ -1553,6 +1553,34 @@ mark.search-match.current { background: rgba(255,160,0,0.7); }
 #update-banner-now:hover { background: #007acc; border-color: #007acc; color: #fff; }
 #update-banner-skip:hover,
 #update-banner-later:hover { background: #3a3a3a; border-color: #555; color: #ccc; }
+.update-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  width: 100%;
+}
+.update-progress-track {
+  flex: 1;
+  height: 5px;
+  background: #0e2a44;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.update-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: #4a9eff;
+  border-radius: 3px;
+  transition: width 0.15s ease;
+}
+.update-progress-text {
+  font-size: 11px;
+  color: #9ecbff;
+  white-space: nowrap;
+  min-width: 90px;
+  text-align: right;
+}
 
 /* ── Shared modal polish ─────────────────────────────────────────────────────
    Applied last so it wins the cascade over the per-modal blocks above. */
