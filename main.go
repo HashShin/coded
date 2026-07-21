@@ -123,6 +123,12 @@ func openBrowser(url string) {
 }
 
 func main() {
+	// Use the system (cgo/Bionic) DNS resolver on Android/Termux.
+	// Go's pure-Go resolver tries [::1]:53 which fails on Termux.
+	if os.Getenv("GODEBUG") == "" {
+		os.Setenv("GODEBUG", "netdns=cgo")
+	}
+
 	// Positional subcommands (not flags).
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
