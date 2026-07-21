@@ -45,8 +45,14 @@ func installedViaPkg() bool {
 // For pkg-managed installs it defers to `pkg remove coded`.
 func runUninstall() int {
 	if installedViaPkg() {
-		fmt.Println("coded was installed via pkg. Uninstall it with:")
-		fmt.Println("  pkg remove coded")
+		cmd := exec.Command("pkg", "remove", "coded")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Stdin = os.Stdin
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "error: pkg remove failed: %v\n", err)
+			return 1
+		}
 		return 0
 	}
 
