@@ -96,7 +96,9 @@ func main() {
 		case "update", "upgrade":
 			os.Exit(runUpdate())
 		case "version":
-			fmt.Printf("coded %s\n", version)
+			if !installedViaPkg() {
+				fmt.Printf("coded %s\n", version)
+			}
 			return
 		}
 	}
@@ -108,7 +110,12 @@ func main() {
 	flag.Parse()
 
 	if *versionFlag || *vFlag {
-		fmt.Printf("coded %s\n", version)
+		// Suppress version output for pkg-managed installs: the version embedded
+		// at build time may be stale (TUR hasn't landed the ldflag PR yet), and
+		// pkg users can check the installed version with `pkg show coded`.
+		if !installedViaPkg() {
+			fmt.Printf("coded %s\n", version)
+		}
 		return
 	}
 
