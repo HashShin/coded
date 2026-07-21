@@ -41,6 +41,33 @@ func installedViaPkg() bool {
 	return strings.HasPrefix(exe, binDir+string(os.PathSeparator)) || filepath.Dir(exe) == binDir
 }
 
+// runUninstall removes the coded binary from disk.
+// For pkg-managed installs it defers to `pkg uninstall coded`.
+func runUninstall() int {
+	if installedViaPkg() {
+		fmt.Println("coded was installed via pkg. Uninstall it with:")
+		fmt.Println("  pkg uninstall coded")
+		return 0
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: could not locate coded binary: %v\n", err)
+		return 1
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+
+	fmt.Printf("Removing %s ...\n", exe)
+	if err := os.Remove(exe); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+	fmt.Println("coded has been uninstalled.")
+	return 0
+}
+
 // runUpdate re-runs the install script for the current platform. It passes the
 // current version so the script can skip the download if already up to date.
 func runUpdate() int {
@@ -95,6 +122,8 @@ func main() {
 		switch os.Args[1] {
 		case "update", "upgrade":
 			os.Exit(runUpdate())
+		case "uninstall", "remove":
+			os.Exit(runUninstall())
 		case "version":
 			if !installedViaPkg() {
 				fmt.Printf("coded %s\n", version)
