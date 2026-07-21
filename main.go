@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/HashShin/coded/server"
 )
@@ -20,9 +21,35 @@ const (
 	installPS1URL = "https://raw.githubusercontent.com/HashShin/coded/main/install.ps1"
 )
 
+// installedViaPkg reports whether the running binary lives inside the Termux
+// package prefix (i.e. it was installed with `pkg install coded` via the TUR).
+// Self-updating such an install would create a shadow copy in ~/.local/bin that
+// drifts from the package manager, so we defer to `pkg` instead.
+func installedViaPkg() bool {
+	prefix := os.Getenv("PREFIX")
+	if prefix == "" {
+		return false
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	binDir := filepath.Join(prefix, "bin")
+	return strings.HasPrefix(exe, binDir+string(os.PathSeparator)) || filepath.Dir(exe) == binDir
+}
+
 // runUpdate re-runs the install script for the current platform. It passes the
 // current version so the script can skip the download if already up to date.
 func runUpdate() int {
+	if installedViaPkg() {
+		fmt.Println("coded was installed via pkg. Update it with:")
+		fmt.Println("  pkg upgrade coded")
+		return 0
+	}
+
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
 		cmd = exec.Command("powershell", "-Command", "irm "+installPS1URL+" | iex")
@@ -113,9 +140,20 @@ func main() {
 	port := ln.Addr().(*net.TCPAddr).Port
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
 	fmt.Printf("Listening on %s\n", url)
+
+	viaPkg := installedViaPkg()
+	if info := server.CheckForUpdate(version, viaPkg); info.Available {
+		fmt.Printf("\n  coded %s is available (you have %s).\n", info.Latest, info.Current)
+		if info.ViaPkg {
+			fmt.Print("  Update with: pkg upgrade coded\n\n")
+		} else {
+			fmt.Print("  Update with: coded update\n\n")
+		}
+	}
+
 	openBrowser(url)
 
-	if err := server.Start(root, ln, staticFiles); err != nil {
+	if err := server.Start(root, version, viaPkg, ln, staticFiles); err != nil {
 		fmt.Fprintf(os.Stderr, "error: server exited: %v\n", err)
 		os.Exit(1)
 	}

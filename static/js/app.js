@@ -2175,6 +2175,67 @@ function init() {
   loadSession().then(restored => {
     if (!restored) showWelcome();
   });
+
+  checkForUpdate();
+}
+
+/**
+ * Ask the server whether a newer release is available and show a banner if so.
+ */
+async function checkForUpdate() {
+  try {
+    const res = await fetch('/api/update');
+    if (!res.ok) return;
+    const info = await res.json();
+    if (info && info.available) showUpdateBanner(info);
+  } catch (err) {
+    // Offline or server not ready — silently ignore.
+  }
+}
+
+/**
+ * Show the update-available banner with Update now / Skip / Remind later.
+ * @param {{current:string, latest:string, viaPkg:boolean}} info
+ */
+function showUpdateBanner(info) {
+  const banner = document.getElementById('update-banner');
+  const msg = document.getElementById('update-banner-msg');
+  const btnNow = document.getElementById('update-banner-now');
+  const btnSkip = document.getElementById('update-banner-skip');
+  const btnLater = document.getElementById('update-banner-later');
+  if (!banner) return;
+
+  msg.textContent = 'coded ' + info.latest + ' is available (you have ' + info.current + ').';
+  banner.classList.add('visible');
+
+  // Clone buttons to drop any previous listeners.
+  const newNow = btnNow.cloneNode(true);
+  const newSkip = btnSkip.cloneNode(true);
+  const newLater = btnLater.cloneNode(true);
+  btnNow.replaceWith(newNow);
+  btnSkip.replaceWith(newSkip);
+  btnLater.replaceWith(newLater);
+
+  newNow.addEventListener('click', () => {
+    // The browser can't replace the running binary; instruct the user instead.
+    const cmd = info.viaPkg ? 'pkg upgrade coded' : 'coded update';
+    msg.textContent = 'Run "' + cmd + '" in your terminal, then restart coded.';
+    newNow.remove();
+    newSkip.remove();
+  });
+
+  newSkip.addEventListener('click', () => {
+    fetch('/api/update/skip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version: info.latest }),
+    }).catch(() => {});
+    banner.classList.remove('visible');
+  });
+
+  newLater.addEventListener('click', () => {
+    banner.classList.remove('visible');
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);

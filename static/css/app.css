@@ -1443,6 +1443,39 @@ mark.search-match.current { background: rgba(255,160,0,0.7); }
 #deleted-banner-close:hover { background: #c0392b; border-color: #c0392b; color: #fff; }
 #deleted-banner-keep:hover { background: #3a3a3a; border-color: #555; color: #ccc; }
 
+#update-banner {
+  display: none;
+  position: fixed;
+  top: 68px;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: #0e3a5c;
+  color: #9ecbff;
+  font-size: 13px;
+  border-bottom: 1px solid #1f5c8c;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+}
+#update-banner.visible { display: flex; }
+#update-banner-msg { flex: 1; }
+#update-banner-now,
+#update-banner-skip,
+#update-banner-later {
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid #1f5c8c;
+  background: #123a55;
+  color: #9ecbff;
+  font-size: 12px;
+  cursor: pointer;
+}
+#update-banner-now:hover { background: #007acc; border-color: #007acc; color: #fff; }
+#update-banner-skip:hover,
+#update-banner-later:hover { background: #3a3a3a; border-color: #555; color: #ccc; }
+
 /* ── Shared modal polish ─────────────────────────────────────────────────────
    Applied last so it wins the cascade over the per-modal blocks above. */
 

@@ -13,7 +13,7 @@ import (
 // root is the working directory for the editor (used by API handlers registered in later tasks).
 // assets is an embedded FS rooted at the "static" directory.
 // The caller is responsible for printing the listening address after Start returns successfully.
-func Start(root string, ln net.Listener, assets embed.FS) error {
+func Start(root, version string, viaPkg bool, ln net.Listener, assets embed.FS) error {
 	// root is used by API handlers (registered in later tasks)
 
 	mux := http.NewServeMux()
@@ -36,6 +36,8 @@ func Start(root string, ln net.Listener, assets embed.FS) error {
 	mux.HandleFunc("/api/rename", handleRename(root))
 	mux.HandleFunc("/api/delete", handleDelete(root))
 	mux.HandleFunc("/api/copy", handleCopy(root))
+	mux.HandleFunc("/api/update", handleUpdate(version, viaPkg))
+	mux.HandleFunc("/api/update/skip", handleUpdateSkip())
 
 	// Live static preview of the editor's working directory.
 	// Serves root at /preview/ so relative imports (CSS, JS, images) resolve naturally.
