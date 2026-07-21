@@ -27,6 +27,11 @@ case "$OS" in
     ;;
 esac
 
+# Termux reports OS=linux but needs the Android build (Bionic/restricted kernel).
+if [ -n "$TERMUX_VERSION" ] || [ "$PREFIX" = "/data/data/com.termux/files/usr" ]; then
+  OS="android"
+fi
+
 # Get latest release tag
 TAG="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed 's/.*"tag_name": *"\(.*\)".*/\1/')"
 

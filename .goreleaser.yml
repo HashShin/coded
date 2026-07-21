@@ -7,7 +7,8 @@ before:
     - go mod tidy
 
 builds:
-  - main: .
+  - id: default
+    main: .
     binary: coded
     env:
       - CGO_ENABLED=0
@@ -24,6 +25,20 @@ builds:
       - arm64
     goarm:
       - "7"
+
+  - id: android
+    main: .
+    binary: coded
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    goos:
+      - android
+    goarch:
+      - arm64
 
 archives:
   - formats: [binary]
