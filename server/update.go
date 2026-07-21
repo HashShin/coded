@@ -1,12 +1,12 @@
 package server
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -94,29 +94,26 @@ func saveCache(c updateCache) {
 	}
 }
 
-// fetchLatestVersionViaPkg queries the apt cache for the candidate version of
-// coded. This is used when coded was installed via the Termux User Repository
-// (pkg install coded) so we use the same update mechanism as the package manager
-// rather than the GitHub API.
-//
-// Example output of `apt-cache policy coded`:
-//
-//	coded:
-//	  Installed: 0.1.2
-//	  Candidate: 0.1.3
-//	  ...
+// turBuildShURL is the raw URL of the TUR build.sh for coded.
+// It is a package var so tests can point it at an httptest.Server.
+var turBuildShURL = "https://raw.githubusercontent.com/termux-user-repository/tur/master/tur/coded/build.sh"
+
+// fetchLatestVersionViaPkg queries the TUR build.sh for the latest packaged
+// version of coded. This avoids requiring `pkg update` (which updates the local
+// apt cache) and gives an up-to-date answer with a single lightweight HTTP request.
 func fetchLatestVersionViaPkg() (string, error) {
-	out, err := exec.Command("apt-cache", "policy", "coded").Output()
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(turBuildShURL)
 	if err != nil {
 		return "", err
 	}
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "Candidate:") {
-			v := strings.TrimSpace(strings.TrimPrefix(line, "Candidate:"))
-			if v == "(none)" || v == "" {
-				return "", nil
-			}
+	defer resp.Body.Close()
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "TERMUX_PKG_VERSION=") {
+			v := strings.TrimPrefix(line, "TERMUX_PKG_VERSION=")
+			v = strings.Trim(v, `"'`)
 			return strings.TrimPrefix(v, "v"), nil
 		}
 	}
