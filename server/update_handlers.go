@@ -12,13 +12,15 @@ import (
 )
 
 // handleUpdate serves GET /api/update — returns the current update status as JSON.
+// In dev builds (version=="dev" or "0.0.1" style) pass ?pkg=1 to simulate a pkg install.
 func handleUpdate(version string, viaPkg bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		info := CheckForUpdate(version, viaPkg)
+		effectiveViaPkg := viaPkg || r.URL.Query().Get("pkg") == "1"
+		info := CheckForUpdate(version, effectiveViaPkg)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		json.NewEncoder(w).Encode(info)
 	}
@@ -53,7 +55,8 @@ func handleUpdateInstall(version string, viaPkg bool) http.HandlerFunc {
 			writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		info := CheckForUpdate(version, viaPkg)
+		effectiveViaPkg := viaPkg || r.URL.Query().Get("pkg") == "1"
+		info := CheckForUpdate(version, effectiveViaPkg)
 		if !info.Available {
 			writeJSONError(w, "no update available", http.StatusConflict)
 			return
@@ -80,7 +83,7 @@ func handleUpdateInstall(version string, viaPkg bool) http.HandlerFunc {
 			flusher.Flush()
 		}
 
-		if viaPkg {
+		if effectiveViaPkg {
 			// Stream pkg upgrade output line by line.
 			if err := runPkgUpgrade(w, flusher, sseMsg); err != nil {
 				errJSON, _ := json.Marshal(map[string]string{"message": err.Error()})
