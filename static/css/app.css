@@ -216,13 +216,74 @@ html, body {
   max-width: 90vw;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 4px;
 }
 .settings-title {
   font-size: 14px;
   font-weight: 600;
   color: #ccc;
   letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.settings-section {
+  border-top: 1px solid #2d2d2d;
+}
+.settings-section:first-of-type {
+  border-top: none;
+}
+.settings-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  padding: 14px 4px;
+  color: #e0e0e0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  outline: none;
+  border-radius: 4px;
+  transition: color 0.12s;
+}
+.settings-section-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.settings-section-name::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 11px;
+  background: #4a9eff;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.settings-section-header::-webkit-details-marker { display: none; }
+.settings-section-header:hover { color: #fff; }
+.settings-section-header:focus-visible {
+  outline: 2px solid #4a9eff;
+  outline-offset: 1px;
+}
+.settings-chevron {
+  width: 12px;
+  height: 12px;
+  color: #666;
+  flex-shrink: 0;
+  transition: transform 0.18s ease, color 0.12s;
+}
+details[open] .settings-chevron {
+  transform: rotate(180deg);
+}
+.settings-section-header:hover .settings-chevron { color: #999; }
+.settings-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 0 14px;
 }
 .settings-row {
   display: flex;
@@ -235,21 +296,12 @@ html, body {
   font-size: 13px;
   user-select: none;
 }
-.settings-divider {
-  border: none;
-  border-top: 1px solid #333;
-  margin: 10px 0 6px;
-}
 .settings-about-row {
   opacity: 0.75;
 }
 .settings-version-badge {
-  font-size: 12px;
-  color: #9ecbff;
-  background: #0e3a5c;
-  border: 1px solid #1f5c8c;
-  border-radius: 4px;
-  padding: 2px 8px;
+  font-size: 13px;
+  color: #aaa;
   font-family: inherit;
   user-select: text;
 }

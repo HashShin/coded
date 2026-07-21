@@ -181,55 +181,72 @@
   <div id="settings-overlay" style="display:none">
     <div id="settings-modal">
       <div class="settings-title">Settings</div>
-      <div class="settings-row">
-        <span class="settings-label">Font size</span>
-        <div class="stepper">
-          <button class="zoom-btn" id="btn-font-dec" aria-label="Decrease font size">&minus;</button>
-          <span class="stepper-value" id="font-size-value">12px</span>
-          <button class="zoom-btn" id="btn-font-inc" aria-label="Increase font size">+</button>
+
+      <details class="settings-section" open>
+        <summary class="settings-section-header">
+          <span class="settings-section-name">Appearance</span>
+          <svg class="settings-chevron" viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5L6 7.5L9 4.5"/></svg>
+        </summary>
+        <div class="settings-section-body">
+          <div class="settings-row">
+            <span class="settings-label">Font size</span>
+            <div class="stepper">
+              <button class="zoom-btn" id="btn-font-dec" aria-label="Decrease font size">&minus;</button>
+              <span class="stepper-value" id="font-size-value">12px</span>
+              <button class="zoom-btn" id="btn-font-inc" aria-label="Increase font size">+</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Line height</span>
+            <div class="stepper">
+              <button class="zoom-btn" id="btn-lh-dec" aria-label="Decrease line height">&minus;</button>
+              <span class="stepper-value" id="line-height-value">1.6</span>
+              <button class="zoom-btn" id="btn-lh-inc" aria-label="Increase line height">+</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Font</span>
+            <select id="font-select" class="settings-select">
+              <option value="fira-code">Fira Code</option>
+              <option value="jetbrains-mono">JetBrains Mono</option>
+              <option value="cascadia-code">Cascadia Code</option>
+              <option value="geist-mono">Geist Mono</option>
+              <option value="source-code-pro">Source Code Pro</option>
+              <option value="ibm-plex-mono">IBM Plex Mono</option>
+            </select>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Theme</span>
+            <select id="theme-select" class="settings-select">
+              <option value="monokai">Monokai</option>
+              <option value="pastel-on-dark">Pastel on Dark</option>
+              <option value="dracula">Dracula</option>
+              <option value="one-dark">One Dark Pro</option>
+              <option value="catppuccin-mocha">Catppuccin Mocha</option>
+              <option value="catppuccin-macchiato">Catppuccin Macchiato</option>
+              <option value="catppuccin-frappe">Catppuccin Frappé</option>
+              <option value="catppuccin-latte">Catppuccin Latte</option>
+            </select>
+          </div>
         </div>
-      </div>
-      <div class="settings-row">
-        <span class="settings-label">Line height</span>
-        <div class="stepper">
-          <button class="zoom-btn" id="btn-lh-dec" aria-label="Decrease line height">&minus;</button>
-          <span class="stepper-value" id="line-height-value">1.6</span>
-          <button class="zoom-btn" id="btn-lh-inc" aria-label="Increase line height">+</button>
+      </details>
+
+      <details class="settings-section">
+        <summary class="settings-section-header">
+          <span class="settings-section-name">About</span>
+          <svg class="settings-chevron" viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5L6 7.5L9 4.5"/></svg>
+        </summary>
+        <div class="settings-section-body">
+          <div class="settings-row settings-about-row">
+            <span class="settings-label">Version</span>
+            <span id="settings-version" class="settings-version-badge">—</span>
+          </div>
+          <div class="settings-row settings-about-row">
+            <span class="settings-label">Source</span>
+            <a class="settings-link" href="https://github.com/HashShin/coded" target="_blank" rel="noopener">github.com/HashShin/coded</a>
+          </div>
         </div>
-      </div>
-      <div class="settings-row">
-        <span class="settings-label">Font</span>
-        <select id="font-select" class="settings-select">
-          <option value="fira-code">Fira Code</option>
-          <option value="jetbrains-mono">JetBrains Mono</option>
-          <option value="cascadia-code">Cascadia Code</option>
-          <option value="geist-mono">Geist Mono</option>
-          <option value="source-code-pro">Source Code Pro</option>
-          <option value="ibm-plex-mono">IBM Plex Mono</option>
-        </select>
-      </div>
-      <div class="settings-row">
-        <span class="settings-label">Theme</span>
-        <select id="theme-select" class="settings-select">
-          <option value="monokai">Monokai</option>
-          <option value="pastel-on-dark">Pastel on Dark</option>
-          <option value="dracula">Dracula</option>
-          <option value="one-dark">One Dark Pro</option>
-          <option value="catppuccin-mocha">Catppuccin Mocha</option>
-          <option value="catppuccin-macchiato">Catppuccin Macchiato</option>
-          <option value="catppuccin-frappe">Catppuccin Frappé</option>
-          <option value="catppuccin-latte">Catppuccin Latte</option>
-        </select>
-      </div>
-      <div class="settings-divider"></div>
-      <div class="settings-row settings-about-row">
-        <span class="settings-label">Version</span>
-        <span id="settings-version" class="settings-version-badge">—</span>
-      </div>
-      <div class="settings-row settings-about-row">
-        <span class="settings-label">Source</span>
-        <a class="settings-link" href="https://github.com/HashShin/coded" target="_blank" rel="noopener">github.com/HashShin/coded</a>
-      </div>
+      </details>
     </div>
   </div>
 
