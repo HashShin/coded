@@ -624,6 +624,7 @@ details[open] .settings-chevron {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
+  user-select: none;
   letter-spacing: 0.08em;
   color: #888888;
   border-bottom: 1px solid #3c3c3c;
