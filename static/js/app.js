@@ -766,6 +766,12 @@ async function createEntry(parentDir, isDir) {
     const j = await res.json().catch(() => ({}));
     _crudError(j.error || 'Create failed.'); return;
   }
+  // Ensure the parent folder is expanded so the new entry is visible after refresh.
+  if (parentDir) {
+    const parentRow = fileTree.querySelector(`.tree-item[data-path="${CSS.escape(parentDir)}"]`);
+    const alreadyOpen = parentRow?.nextElementSibling?.classList.contains('tree-children');
+    if (parentRow && !alreadyOpen) await toggleDir(parentRow, parentDir);
+  }
   await refreshTreePreservingState();
   if (!isDir) openFile(path);
 }
