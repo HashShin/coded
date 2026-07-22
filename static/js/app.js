@@ -767,6 +767,7 @@ async function createEntry(parentDir, isDir) {
     _crudError(j.error || 'Create failed.'); return;
   }
   await refreshTreePreservingState();
+  if (!isDir) openFile(path);
 }
 
 async function renameEntry(itemPath, isDir) {
