@@ -98,6 +98,14 @@ func saveCache(c updateCache) {
 // It is a package var so tests can point it at an httptest.Server.
 var turBuildShURL = "https://raw.githubusercontent.com/termux-user-repository/tur/master/tur/coded/build.sh"
 
+// turBuildShCommitsURL is the GitHub commits API endpoint for the TUR build.sh.
+// Package var so tests can point it at an httptest.Server.
+var turBuildShCommitsURL = "https://api.github.com/repos/termux-user-repository/tur/commits?path=tur/coded/build.sh&per_page=1"
+
+// turBuildGracePeriod is how long after a build.sh change we suppress the pkg
+// update suggestion, giving TUR CI time to build and publish the package.
+const turBuildGracePeriod = 15 * time.Minute
+
 // fetchLatestVersionViaPkg queries the TUR build.sh for the latest packaged
 // version of coded. This avoids requiring `pkg update` (which updates the local
 // apt cache) and gives an up-to-date answer with a single lightweight HTTP request.
@@ -118,6 +126,37 @@ func fetchLatestVersionViaPkg() (string, error) {
 		}
 	}
 	return "", nil
+}
+
+// fetchTURBuildModified returns the committer timestamp of the most recent change
+// to the TUR build.sh for coded. Returns a zero time if it can't be determined;
+// callers should fail open (not gate) in that case.
+func fetchTURBuildModified() (time.Time, error) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, turBuildShCommitsURL, nil)
+	if err != nil {
+		return time.Time{}, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer resp.Body.Close()
+	var commits []struct {
+		Commit struct {
+			Committer struct {
+				Date time.Time `json:"date"`
+			} `json:"committer"`
+		} `json:"commit"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&commits); err != nil {
+		return time.Time{}, err
+	}
+	if len(commits) == 0 {
+		return time.Time{}, nil
+	}
+	return commits[0].Commit.Committer.Date, nil
 }
 
 // fetchLatestVersion queries GitHub for the latest release tag (without leading "v").
@@ -176,6 +215,19 @@ func CheckForUpdate(current string, viaPkg bool, ignoreSkip bool) UpdateInfo {
 	}
 	skipped := c.SkippedVersion
 	cacheMu.Unlock()
+
+	// For pkg/TUR installs, suppress a freshly-committed version until TUR CI
+	// has had time to build and publish the package. Fail open on any error so
+	// a real update is never hidden indefinitely.
+	if viaPkg && latest != "" && latest != current {
+		if modAt, err := fetchTURBuildModified(); err == nil && !modAt.IsZero() {
+			if time.Since(modAt) < turBuildGracePeriod {
+				info.Latest = current
+				info.Available = false
+				return info
+			}
+		}
+	}
 
 	info.Latest = latest
 	if ignoreSkip {

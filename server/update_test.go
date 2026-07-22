@@ -127,6 +127,85 @@ func TestUpdateInfo_ViaPkgPassedThrough(t *testing.T) {
 	}
 }
 
+// mockTURBuildSh points turBuildShURL at a test server returning the given version.
+func mockTURBuildSh(t *testing.T, version string) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("TERMUX_PKG_VERSION=" + version + "\n"))
+	}))
+	t.Cleanup(srv.Close)
+	orig := turBuildShURL
+	turBuildShURL = srv.URL
+	t.Cleanup(func() { turBuildShURL = orig })
+}
+
+// mockTURCommits points turBuildShCommitsURL at a test server returning the given commit time.
+// Pass a zero time to simulate an empty commits array.
+func mockTURCommits(t *testing.T, modAt time.Time) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if modAt.IsZero() {
+			w.Write([]byte(`[]`))
+			return
+		}
+		w.Write([]byte(`[{"commit":{"committer":{"date":"` + modAt.UTC().Format(time.RFC3339) + `"}}}]`))
+	}))
+	t.Cleanup(srv.Close)
+	orig := turBuildShCommitsURL
+	turBuildShCommitsURL = srv.URL
+	t.Cleanup(func() { turBuildShCommitsURL = orig })
+}
+
+func TestCheckForUpdate_PkgGracePeriod_TooFresh(t *testing.T) {
+	isolateCache(t)
+	mockTURBuildSh(t, "0.2.0")
+	mockTURCommits(t, time.Now()) // changed just now — within grace
+
+	info := CheckForUpdate("0.1.0", true, false)
+	if info.Available {
+		t.Fatalf("expected update suppressed during grace period, got %+v", info)
+	}
+}
+
+func TestCheckForUpdate_PkgGracePeriod_OldEnough(t *testing.T) {
+	isolateCache(t)
+	mockTURBuildSh(t, "0.2.0")
+	mockTURCommits(t, time.Now().Add(-20*time.Minute)) // 20 min ago — outside grace
+
+	info := CheckForUpdate("0.1.0", true, false)
+	if !info.Available || info.Latest != "0.2.0" {
+		t.Fatalf("expected update available after grace period, got %+v", info)
+	}
+}
+
+func TestCheckForUpdate_PkgGracePeriod_FailOpen_EmptyCommits(t *testing.T) {
+	isolateCache(t)
+	mockTURBuildSh(t, "0.2.0")
+	mockTURCommits(t, time.Time{}) // empty array → zero time → fail open
+
+	info := CheckForUpdate("0.1.0", true, false)
+	if !info.Available || info.Latest != "0.2.0" {
+		t.Fatalf("expected fail-open when commits empty, got %+v", info)
+	}
+}
+
+func TestCheckForUpdate_PkgGracePeriod_FailOpen_CommitsError(t *testing.T) {
+	isolateCache(t)
+	mockTURBuildSh(t, "0.2.0")
+	// Point commits URL at a closed server so the request errors.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	orig := turBuildShCommitsURL
+	turBuildShCommitsURL = srv.URL
+	srv.Close()
+	t.Cleanup(func() { turBuildShCommitsURL = orig })
+
+	info := CheckForUpdate("0.1.0", true, false)
+	if !info.Available || info.Latest != "0.2.0" {
+		t.Fatalf("expected fail-open when commits API errors, got %+v", info)
+	}
+}
+
 func TestAssetName(t *testing.T) {
 	name := assetName("0.1.3")
 	if !strings.HasPrefix(name, "coded_0.1.3_") {
