@@ -386,7 +386,7 @@ const Search = (() => {
     // Pre-fill with current find-input value if any.
     const modalInput = _el('search-modal-input');
     modalInput.value = _el('find-input').value;
-    if (!navigator.maxTouchPoints) { modalInput.focus(); modalInput.select(); }
+    modalInput.focus(); modalInput.select();
   }
 
   function _closeSearchModal() {

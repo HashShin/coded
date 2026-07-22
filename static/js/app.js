@@ -17,6 +17,17 @@ let _saveSessionTimer = null;
 /** Per-file fold state: path -> number[] (collapsed start lines). */
 const foldStates = new Map();
 
+/** Tracks server connectivity for save-button state. */
+let _serverOnline = true;
+
+/** Update the save button's disabled state based on dirty + online. */
+function updateSaveButton() {
+  const btnSave = document.getElementById('btn-save');
+  if (!btnSave) return;
+  const file = activeTab ? openFiles.get(activeTab) : null;
+  btnSave.disabled = !_serverOnline || !(file && file.dirty);
+}
+
 /** Whether to show dotfiles/dotdirs in tree and quick-open. */
 let showHidden = false;
 
@@ -1157,6 +1168,7 @@ function updateTabDirty(filePath) {
   } else {
     tab.classList.remove('dirty');
   }
+  if (filePath === activeTab) updateSaveButton();
 }
 
 /**
@@ -1927,6 +1939,7 @@ function init() {
   const btnSave = document.getElementById('btn-save');
   if (btnSave) {
     btnSave.addEventListener('click', () => saveCurrentFile());
+    updateSaveButton();
   }
 
   // Run button — only visible for HTML files.
@@ -2145,8 +2158,6 @@ function init() {
 
   // ── Server connection indicator ───────────────────────────────────────────
   const statusConn = document.getElementById('status-conn');
-  let _serverOnline = true;
-
   const statusBar = document.getElementById('status-bar');
   const offlineOverlay = document.getElementById('offline-overlay');
   const offlineDismiss = document.getElementById('offline-dismiss');
@@ -2162,8 +2173,7 @@ function init() {
     _serverOnline = online;
     if (statusBar) statusBar.classList.toggle('offline', !online);
     if (statusConn) statusConn.textContent = '⚠ Server disconnected — edits will not save';
-    const btnSave = document.getElementById('btn-save');
-    if (btnSave) btnSave.disabled = !online;
+    updateSaveButton();
     if (offlineOverlay) {
       if (!online && !_offlineDismissed) {
         offlineOverlay.style.display = 'flex';

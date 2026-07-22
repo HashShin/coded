@@ -60,4 +60,22 @@ changelog:
 release:
   footer: |
     ---
-    Termux users: `coded` is also available in the [TUR](https://github.com/termux-user-repository/tur) — `pkg install coded` after enabling the tur-repo.
+    ## Install
+
+    Prefer the one-line installer over downloading the binary directly — it detects your OS/arch and puts `coded` on your PATH.
+
+    **Linux / macOS**
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/HashShin/coded/main/install.sh | sh
+    ```
+
+    **Windows (PowerShell)**
+    ```powershell
+    irm https://raw.githubusercontent.com/HashShin/coded/main/install.ps1 | iex
+    ```
+
+    **Termux (Android)** — via the [Termux User Repository](https://github.com/termux-user-repository/tur):
+    ```sh
+    pkg install tur-repo   # adds the TUR (only needed once)
+    pkg install coded
+    ```
