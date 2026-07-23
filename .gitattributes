@@ -1,0 +1,4 @@
+# Third-party libraries — exclude from GitHub Linguist language stats.
+static/vendor/** linguist-vendored
+# Icon data (generated lookup table), not hand-written source.
+static/js/fileicons.json linguist-generated

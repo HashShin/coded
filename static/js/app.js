@@ -2224,11 +2224,16 @@ function init() {
   // Expose for quickopen.js to read.
   window.getShowHidden = () => showHidden;
 
-  loadRootTree();
+  // Wait for icon path data (fileicons.json) before the first render so file
+  // logos appear on first paint instead of flashing in after a swap.
+  const _iconsReady = window.FILE_ICON_PATHS_READY || Promise.resolve();
+  _iconsReady.then(() => {
+    loadRootTree();
 
-  // Restore previous session; fall back to welcome screen.
-  loadSession().then(restored => {
-    if (!restored) showWelcome();
+    // Restore previous session; fall back to welcome screen.
+    loadSession().then(restored => {
+      if (!restored) showWelcome();
+    });
   });
 
   checkForUpdate();
