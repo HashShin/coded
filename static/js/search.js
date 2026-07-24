@@ -12,6 +12,7 @@ const Search = (() => {
   let _current = -1;      // index into _matches for current match
   let _query = '';         // raw query string (may contain newlines)
   let _replaceQuery = '';  // raw replace string (may contain newlines)
+  let _originFile = null;  // path of the file the find panel is open against
 
   // ── DOM refs (lazily resolved after DOMContentLoaded) ─────────────────────
 
@@ -203,6 +204,7 @@ const Search = (() => {
     const text = ed.getValue();
     _matches = findMatches(text, _query, isRegex);
     _current = _matches.length > 0 ? 0 : -1;
+    _originFile = window.activeTab || null;
     _updateCount();
     applyHighlights();
     _scrollToCurrent();
@@ -301,6 +303,7 @@ const Search = (() => {
     _current = -1;
     _query = '';
     _replaceQuery = '';
+    _originFile = null;
     // Clear highlights.
     const editorInner = document.querySelector('.editor-inner');
     if (editorInner) {
@@ -312,6 +315,15 @@ const Search = (() => {
       }
     }
     _el('find-count').textContent = '';
+  }
+
+  // Called by app.js when the active tab changes. If the find panel is open and
+  // we've moved to a different file than the one it was searching, close it.
+  function notifyTabSwitched(path) {
+    if (_originFile !== null && path !== _originFile &&
+        _el('find-panel').style.display !== 'none') {
+      closeFind();
+    }
   }
 
   // ── Folder search ──────────────────────────────────────────────────────────
@@ -471,7 +483,7 @@ const Search = (() => {
 
   document.addEventListener('DOMContentLoaded', init);
 
-  return { openFind, openFindReplace, openFolderSearch, openSearchModal, closeFind, findMatches };
+  return { openFind, openFindReplace, openFolderSearch, openSearchModal, closeFind, findMatches, notifyTabSwitched };
 })();
 
 window.Search = Search;

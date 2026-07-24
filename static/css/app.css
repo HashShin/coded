@@ -838,6 +838,7 @@ details[open] .settings-chevron {
   color: #cccccc;
   font-size: 13px;
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
   min-height: 38px;
 }
 

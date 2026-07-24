@@ -530,6 +530,10 @@ function computeFoldRanges(text) {
 const BRACKET_PAIRS = { '(': ')', '[': ']', '{': '}', '<': '>' };
 const BRACKET_CLOSE = { ')': '(', ']': '[', '}': '{', '>': '<' };
 const ALL_BRACKETS = new Set(['(', ')', '[', ']', '{', '}', '<', '>']);
+// Auto-close pairs (used by both _onKeydown for physical keyboards and _onInput
+// for soft/touch keyboards where keydown doesn't carry the typed character).
+// Note: '{' is intentionally excluded — '}' is inserted on Enter, not on typing '{'.
+const AUTO_PAIRS = { '(': ')', '[': ']', '"': '"', "'": "'" };
 
 /**
  * Given a string and the position of an opening bracket, find its matching
@@ -710,9 +714,12 @@ class EditorInstance {
     this._large.value = '';
     this._wrap.style.display = 'flex';
     this._render(text);
-    // Place caret at start. Don't focus on touch — avoids popping the keyboard.
-    if (!navigator.maxTouchPoints) this._inner.focus();
-    setCaretOffset(this._inner, 0, 0);
+    // Place caret at start. Don't focus or set a selection on touch — either one
+    // pops the on-screen keyboard, which is unwanted when just switching tabs.
+    if (!navigator.maxTouchPoints) {
+      this._inner.focus();
+      setCaretOffset(this._inner, 0, 0);
+    }
   }
 
   /**
@@ -1196,6 +1203,41 @@ class EditorInstance {
    */
   _onInput() {
     const text = this.getValue();
+    const prev = this._lastText;
+
+    // ── Soft-keyboard auto-close ────────────────────────────────────────────
+    // Physical keyboards handle auto-close in _onKeydown via preventDefault, so
+    // the input event never fires for those insertions. Soft/touch keyboards
+    // (Android GBoard, etc.) fire keydown with e.key==='Unidentified', so the
+    // character arrives here instead. Detect a single opening-pair char inserted
+    // at the caret and insert the matching close char after it.
+    const acCaret = getCaretOffset(this._inner);
+    if (prev !== null && acCaret !== null && acCaret.anchor === acCaret.focus &&
+        text.length === prev.length + 1) {
+      const pos = acCaret.focus;        // caret is just after the inserted char
+      const inserted = text[pos - 1];
+      // Verify this is a pure single-char insertion (not paste or IME commit).
+      if (AUTO_PAIRS.hasOwnProperty(inserted) &&
+          text.slice(0, pos - 1) === prev.slice(0, pos - 1) &&
+          text.slice(pos) === prev.slice(pos - 1)) {
+        const nextChar = text[pos] || '';
+        const nextIsWsOrEnd = nextChar === '' || /[\s\n\r]/.test(nextChar) ||
+                              ')]}"\''.includes(nextChar);
+        const isQuote = inserted === '"' || inserted === "'";
+        const prevChar = pos >= 2 ? text[pos - 2] : '';
+        if (nextIsWsOrEnd && !(isQuote && prevChar === inserted)) {
+          const closing = AUTO_PAIRS[inserted];
+          const newText = text.slice(0, pos) + closing + text.slice(pos);
+          this._lastText = newText;
+          this._render(newText);
+          setCaretOffset(this._inner, pos, pos);
+          this._pushHistory(newText, { anchor: pos, focus: pos });
+          if (typeof this.onchange === 'function') this.onchange(newText);
+          this._updateAutocomplete();
+          return;
+        }
+      }
+    }
 
     // Normalize DOM structure even when plain text hasn't changed: the browser
     // may have injected extra divs/spans that leave the DOM in a messy state
@@ -1471,7 +1513,6 @@ class EditorInstance {
     }
 
     // ── Auto-close pairs ─────────────────────────────────────────────────────
-    const AUTO_PAIRS = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'" };
     if (AUTO_PAIRS.hasOwnProperty(e.key)) {
       const text     = this.getValue();
       const caretPos = getCaretOffset(this._inner);
@@ -1542,9 +1583,24 @@ class EditorInstance {
 
       const indent = leadingWs + extraIndent;
 
+      // When pressing Enter right after '{', insert an indented line AND a
+      // closing '}' on the line below, placing the caret on the middle line.
+      const selEnd = Math.max(caretPos.anchor, caretPos.focus);
+      if (lastChar === '{') {
+        const inserted = '\n' + indent + '\n' + leadingWs + '}';
+        const newText  = text.slice(0, pos) + inserted + text.slice(selEnd);
+        const newCaret = pos + 1 + indent.length; // on the blank indented line
+        this._lastText = newText;
+        this._render(newText);
+        setCaretOffset(this._inner, newCaret, newCaret);
+        this._pushHistory(newText, { anchor: newCaret, focus: newCaret });
+        if (typeof this.onchange === 'function') this.onchange(newText);
+        return;
+      }
+
       // Build the new text directly (avoids DOM-read trailing-newline ambiguity).
       const inserted = '\n' + indent;
-      const newText = text.slice(0, pos) + inserted + text.slice(Math.max(caretPos.anchor, caretPos.focus));
+      const newText = text.slice(0, pos) + inserted + text.slice(selEnd);
       const newCaret = pos + inserted.length;
       this._lastText = newText;
       this._render(newText);

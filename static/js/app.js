@@ -7,6 +7,7 @@ const openFiles = new Map();
 
 /** Currently active tab path, or null. */
 let activeTab = null;
+window.activeTab = null;
 
 /** The Editor instance (created on DOMContentLoaded). */
 let editor = null;
@@ -16,6 +17,12 @@ let _saveSessionTimer = null;
 
 /** Per-file fold state: path -> number[] (collapsed start lines). */
 const foldStates = new Map();
+
+/** Per-file editor scroll position: path -> scrollTop (px). */
+const scrollPositions = new Map();
+
+/** Per-file caret offset: path -> {anchor, focus}. */
+const caretOffsets = new Map();
 
 /** Tracks server connectivity for save-button state. */
 let _serverOnline = true;
@@ -587,7 +594,6 @@ function buildTreeList(entries, parentPath) {
         _lpTimer = null;
         if (selectionMode) { toggleSelectedItem(row); return; }
         const t = e.touches[0];
-        const fakeEvt = { _fromLongPress: true };
         showContextMenu(itemPath, entry.isDir, t.clientX, t.clientY);
       }, 500);
     }, { passive: true });
@@ -845,14 +851,54 @@ function promptModal(opts) {
 
 // ── Context menu ──────────────────────────────────────────────────────────────
 
+/**
+ * Arm the outside-tap/click listeners that dismiss an open context menu.
+ *
+ * When the menu is opened by a touch long-press, the finger is still down.
+ * Arming a `touchstart` dismiss listener immediately (or on setTimeout 0) makes
+ * that same gesture's release — plus the synthetic mouse events touch emits —
+ * instantly close the menu, and a re-fired OS long-press re-opens it: a visible
+ * blink. To avoid this we wait for the opening pointer to lift (pointerup /
+ * touchend / mouseup) before arming the dismiss listeners.
+ */
+function armMenuDismiss(menu) {
+  function dismiss(e) {
+    if (!menu.contains(e.target)) {
+      menu.remove();
+      document.removeEventListener('mousedown', dismiss, true);
+      document.removeEventListener('touchstart', dismiss, true);
+    }
+  }
+  function arm() {
+    document.addEventListener('mousedown', dismiss, true);
+    document.addEventListener('touchstart', dismiss, true);
+  }
+  // Wait until the current pointer/touch is released, then arm on the next
+  // frame so the release event itself can't dismiss the just-opened menu.
+  function onRelease() {
+    document.removeEventListener('pointerup', onRelease, true);
+    document.removeEventListener('touchend', onRelease, true);
+    document.removeEventListener('mouseup', onRelease, true);
+    requestAnimationFrame(arm);
+  }
+  document.addEventListener('pointerup', onRelease, true);
+  document.addEventListener('touchend', onRelease, true);
+  document.addEventListener('mouseup', onRelease, true);
+}
+
 function showContextMenu(itemPath, isDir, x, y) {
-  // Remove any existing menu.
+  // Idempotent: if this exact menu is already open, don't rebuild it. Android
+  // long-press can fire `contextmenu` repeatedly during a hold; rebuilding
+  // would replay the open animation and cause a visible flicker.
   const existing = document.getElementById('tree-context-menu');
+  const key = 'item:' + itemPath;
+  if (existing && existing.dataset.key === key) return;
   if (existing) existing.remove();
 
   const menu = document.createElement('div');
   menu.id = 'tree-context-menu';
   menu.className = 'tree-context-menu';
+  menu.dataset.key = key;
 
   function addItem(label, fn) {
     const btn = document.createElement('button');
@@ -890,25 +936,17 @@ function showContextMenu(itemPath, isDir, x, y) {
   menu.style.left = left + 'px';
   menu.style.top  = top + 'px';
 
-  function dismiss(e) {
-    if (!menu.contains(e.target)) {
-      menu.remove();
-      document.removeEventListener('mousedown', dismiss, true);
-      document.removeEventListener('touchstart', dismiss, true);
-    }
-  }
-  setTimeout(() => {
-    document.addEventListener('mousedown', dismiss, true);
-    document.addEventListener('touchstart', dismiss, true);
-  }, 0);
+  armMenuDismiss(menu);
 }
 
 function showRootContextMenu(x, y) {
   const existing = document.getElementById('tree-context-menu');
+  if (existing && existing.dataset.key === 'root') return; // already open — avoid flicker
   if (existing) existing.remove();
   const menu = document.createElement('div');
   menu.id = 'tree-context-menu';
   menu.className = 'tree-context-menu';
+  menu.dataset.key = 'root';
   function addItem(label, fn) {
     const btn = document.createElement('button');
     btn.className = 'ctx-menu-item';
@@ -929,11 +967,7 @@ function showRootContextMenu(x, y) {
   const rect = menu.getBoundingClientRect();
   menu.style.left = Math.min(x, window.innerWidth  - rect.width  - 4) + 'px';
   menu.style.top  = Math.min(y, window.innerHeight - rect.height - 4) + 'px';
-  setTimeout(() => {
-    function dismiss(e) { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', dismiss, true); document.removeEventListener('touchstart', dismiss, true); } }
-    document.addEventListener('mousedown', dismiss, true);
-    document.addEventListener('touchstart', dismiss, true);
-  }, 0);
+  armMenuDismiss(menu);
 }
 
 // ── File CRUD actions ─────────────────────────────────────────────────────────
@@ -1246,6 +1280,11 @@ function saveActiveTabContent() {
       file.content = editor.getValue();
     }
     if (file && !file.isImage && editor.getFoldStates) foldStates.set(activeTab, editor.getFoldStates());
+    if (file && !file.isImage && editorPane) scrollPositions.set(activeTab, editorPane.scrollTop);
+    if (file && !file.isImage && editor.getCaretOffset) {
+      const pos = editor.getCaretOffset();
+      if (pos) caretOffsets.set(activeTab, pos);
+    }
   }
 }
 
@@ -1275,7 +1314,11 @@ function activateTab(filePath) {
     if (prevTree) prevTree.classList.remove('active');
   }
 
+  // If the find panel is open on a different file, close it before switching.
+  if (window.Search && Search.notifyTabSwitched) Search.notifyTabSwitched(filePath);
+
   activeTab = filePath;
+  window.activeTab = activeTab;
 
   // Activate tab element.
   let tab = tabBar.querySelector('.tab[data-path="' + CSS.escape(filePath) + '"]');
@@ -1548,6 +1591,8 @@ async function closeTab(filePath) {
   }
 
   openFiles.delete(filePath);
+  scrollPositions.delete(filePath);
+  caretOffsets.delete(filePath);
 
   const tab = tabBar.querySelector('.tab[data-path="' + CSS.escape(filePath) + '"]');
   if (!tab) return;
@@ -1563,6 +1608,7 @@ async function closeTab(filePath) {
 
   if (activeTab === filePath) {
     activeTab = null;
+    window.activeTab = null;
     // Switch to adjacent tab.
     const remaining = Array.from(tabBar.querySelectorAll('.tab'));
     if (remaining.length > 0) {
@@ -1610,6 +1656,42 @@ function showContent(filePath, content) {
   // Restore fold state for this file (setValue clears folds via fresh render).
   const folds = foldStates.get(filePath);
   if (folds && editor.setFoldStates) editor.setFoldStates(folds);
+  // Restore caret + scroll for this file (setValue resets both to the top).
+  // Skip caret restore on touch: setting a selection focuses the contenteditable
+  // and pops the on-screen keyboard.
+  const caret = caretOffsets.get(filePath);
+  if (caret && editor.setCaretOffset && !navigator.maxTouchPoints) {
+    editor.setCaretOffset(caret.anchor, caret.focus);
+  }
+  if (editorPane) _pinScroll(scrollPositions.get(filePath) || 0);
+}
+
+/** Timer/handler for the post-switch scroll pin. */
+let _pinScrollCleanup = null;
+
+/**
+ * Set editorPane.scrollTop and hold it there briefly. setValue()'s focus/caret
+ * reset and async browser scroll-into-view can yank the pane back to the top
+ * after we restore; pinning for a short window ensures our position wins.
+ * @param {number} scrollTop
+ */
+function _pinScroll(scrollTop) {
+  if (_pinScrollCleanup) _pinScrollCleanup();
+  editorPane.scrollTop = scrollTop;
+  const onScroll = () => { editorPane.scrollTop = scrollTop; };
+  editorPane.addEventListener('scroll', onScroll);
+  const raf = requestAnimationFrame(() => { editorPane.scrollTop = scrollTop; });
+  const timer = setTimeout(() => {
+    editorPane.scrollTop = scrollTop;
+    release();
+  }, 150);
+  function release() {
+    editorPane.removeEventListener('scroll', onScroll);
+    cancelAnimationFrame(raf);
+    clearTimeout(timer);
+    _pinScrollCleanup = null;
+  }
+  _pinScrollCleanup = release;
 }
 
 function showWelcome() {
