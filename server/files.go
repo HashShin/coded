@@ -89,6 +89,9 @@ func handleTree(root string) http.HandlerFunc {
 		var dirs, files []treeEntry
 		for _, e := range entries {
 			name := e.Name()
+			if name == ".coded" {
+				continue
+			}
 			if !showHidden && strings.HasPrefix(name, ".") {
 				continue
 			}
