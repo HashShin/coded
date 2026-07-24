@@ -121,6 +121,98 @@ function langFromPath(filePath) {
   return map[ext] || 'plain';
 }
 
+// ── PHP include autocomplete ─────────────────────────────────────────────────
+
+/**
+ * Function names discovered in include/require'd files, keyed by the active
+ * PHP file's path. Populated asynchronously by refreshIncludeFns(); read
+ * synchronously by the window.acIncludeFns hook.
+ * @type {Map<string, Set<string>>}
+ */
+const includeFnCache = new Map();
+
+/** Debounce handle for refreshIncludeFns during editing. */
+let _includeFnsTimer = null;
+
+/**
+ * Resolve an include target (a quoted path from an include/require statement)
+ * against the directory of the file that contains it, normalized to a
+ * root-relative POSIX path. Returns null if the path escapes the project root
+ * (the backend would reject it anyway).
+ * @param {string} target   The literal path, e.g. '../func.php' or 'lib/x.php'.
+ * @param {string} fromPath Root-relative path of the file doing the including.
+ * @returns {string|null}
+ */
+function resolveIncludePath(target, fromPath) {
+  if (!target || /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(target)) return null; // skip URLs
+  const baseDir = fromPath.includes('/') ? fromPath.slice(0, fromPath.lastIndexOf('/')) : '';
+  const segs = baseDir ? baseDir.split('/') : [];
+  for (const raw of target.split('/')) {
+    if (raw === '' || raw === '.') continue;
+    if (raw === '..') {
+      if (segs.length === 0) return null; // escapes root
+      segs.pop();
+    } else {
+      segs.push(raw);
+    }
+  }
+  return segs.length ? segs.join('/') : null;
+}
+
+/**
+ * Extract include/require string-literal targets from PHP source.
+ * @param {string} text
+ * @returns {string[]}
+ */
+function extractIncludeTargets(text) {
+  const re = /\b(?:include|include_once|require|require_once)\b\s*\(?\s*['"]([^'"]+)['"]/g;
+  const out = [];
+  let m;
+  while ((m = re.exec(text)) !== null) out.push(m[1]);
+  return out;
+}
+
+/**
+ * Resolve the includes referenced by filePath's current content, fetch each
+ * referenced file, parse out its `function` definitions, and store the union
+ * in includeFnCache[filePath]. Best-effort and async; failures are silent.
+ * @param {string} filePath
+ */
+async function refreshIncludeFns(filePath) {
+  if (!filePath || langFromPath(filePath) !== 'php') return;
+  const file = openFiles.get(filePath);
+  const text = file && typeof file.content === 'string' ? file.content : (activeTab === filePath && editor ? editor.getValue() : '');
+  const targets = extractIncludeTargets(text);
+
+  const paths = [];
+  const seen = new Set();
+  for (const t of targets) {
+    const resolved = resolveIncludePath(t, filePath);
+    if (resolved && !seen.has(resolved)) { seen.add(resolved); paths.push(resolved); }
+  }
+
+  const fnNames = new Set();
+  const fnRe = /\bfunction\s+([A-Za-z_\x80-\xff][A-Za-z0-9_\x80-\xff]*)\s*\(/g;
+  await Promise.all(paths.map(async (p) => {
+    try {
+      const res = await fetch('/api/file?path=' + encodeURIComponent(p));
+      if (!res.ok) return;
+      const src = await res.text();
+      let m;
+      while ((m = fnRe.exec(src)) !== null) fnNames.add(m[1]);
+      fnRe.lastIndex = 0;
+    } catch (_) { /* best-effort */ }
+  }));
+
+  includeFnCache.set(filePath, fnNames);
+}
+
+/** Debounced refresh triggered on edit. */
+function scheduleIncludeFnsRefresh(filePath) {
+  clearTimeout(_includeFnsTimer);
+  _includeFnsTimer = setTimeout(() => refreshIncludeFns(filePath), 400);
+}
+
 // ── Tree ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -1091,6 +1183,9 @@ function activateTab(filePath) {
   const file = openFiles.get(filePath);
   showContent(filePath, file ? file.content : '');
 
+  // Refresh include'd-function suggestions for PHP files.
+  refreshIncludeFns(filePath);
+
   scheduleSaveSession();
 }
 
@@ -1724,6 +1819,10 @@ function init() {
     return out;
   };
 
+  // PHP include/require autocomplete: expose functions defined in include'd
+  // files to the engine, even when those files are not open in a tab.
+  window.acIncludeFns = () => includeFnCache.get(activeTab) || null;
+
   // Undo/Redo buttons.
   const btnUndo = document.getElementById('btn-undo');
   const btnRedo = document.getElementById('btn-redo');
@@ -1758,6 +1857,7 @@ function init() {
         updateDirtyState(activeTab, text);
         scheduleSaveSession();
       }
+      scheduleIncludeFnsRefresh(activeTab);
     }
     refreshUndoButtons();
   };

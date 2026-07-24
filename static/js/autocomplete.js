@@ -444,6 +444,19 @@ function acCode(text, caretPos, lang) {
     } catch (e) { /* hook failure must never break typing */ }
   }
 
+  // PHP: functions defined in include/require'd files (hook set by app.js).
+  if (lang === 'php' && typeof window.acIncludeFns === 'function') {
+    try {
+      const includeFns = window.acIncludeFns();
+      if (includeFns) {
+        for (const name of includeFns) {
+          if (!counts.has(name)) counts.set(name, 0.6); // above other-tab (0.5), below in-file
+          fns.add(name); // rank as functions and complete with ()
+        }
+      }
+    } catch (e) { /* never break typing */ }
+  }
+
   const matches = [];
   for (const w of counts.keys()) {
     if (w !== prefix && w.toLowerCase().startsWith(lower)) matches.push(w);
