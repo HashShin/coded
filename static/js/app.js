@@ -121,33 +121,37 @@ function langFromPath(filePath) {
   return map[ext] || 'plain';
 }
 
-// ── PHP include autocomplete ─────────────────────────────────────────────────
+// ── Import autocomplete ──────────────────────────────────────────────────────
+//
+// Discover functions defined in files that the active file imports/includes,
+// so they autocomplete even when those files are not open in a tab. The engine
+// is table-driven: each language contributes an import matcher, a path resolver,
+// and a definition matcher. The pipeline is async fire-and-forget — it never
+// blocks file opening or typing; the autocomplete hook only reads a cache.
 
 /**
- * Function names discovered in include/require'd files, keyed by the active
- * PHP file's path. Populated asynchronously by refreshIncludeFns(); read
- * synchronously by the window.acIncludeFns hook.
+ * Function names discovered in imported files, keyed by the importing file's
+ * path. Populated asynchronously by refreshImportFns(); read synchronously by
+ * the window.acIncludeFns hook.
  * @type {Map<string, Set<string>>}
  */
-const includeFnCache = new Map();
+const importFnCache = new Map();
 
-/** Debounce handle for refreshIncludeFns during editing. */
-let _includeFnsTimer = null;
+/** Debounce handle for refreshImportFns during editing. */
+let _importFnsTimer = null;
+
+/** Directory portion of a root-relative path ('a/b/c.js' -> 'a/b', 'x.js' -> ''). */
+function dirOf(p) {
+  return p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '';
+}
 
 /**
- * Resolve an include target (a quoted path from an include/require statement)
- * against the directory of the file that contains it, normalized to a
- * root-relative POSIX path. Returns null if the path escapes the project root
- * (the backend would reject it anyway).
- * @param {string} target   The literal path, e.g. '../func.php' or 'lib/x.php'.
- * @param {string} fromPath Root-relative path of the file doing the including.
- * @returns {string|null}
+ * Normalize a list of path segments relative to baseDir into a root-relative
+ * POSIX path. Returns null if it escapes the project root.
  */
-function resolveIncludePath(target, fromPath) {
-  if (!target || /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(target)) return null; // skip URLs
-  const baseDir = fromPath.includes('/') ? fromPath.slice(0, fromPath.lastIndexOf('/')) : '';
+function normalizeWithin(baseDir, parts) {
   const segs = baseDir ? baseDir.split('/') : [];
-  for (const raw of target.split('/')) {
+  for (const raw of parts) {
     if (raw === '' || raw === '.') continue;
     if (raw === '..') {
       if (segs.length === 0) return null; // escapes root
@@ -160,57 +164,164 @@ function resolveIncludePath(target, fromPath) {
 }
 
 /**
- * Extract include/require string-literal targets from PHP source.
- * @param {string} text
+ * Relative-path resolver (php, c, cpp). Returns an array of candidate paths.
+ * @param {string} target
+ * @param {string} fromPath
  * @returns {string[]}
  */
-function extractIncludeTargets(text) {
-  const re = /\b(?:include|include_once|require|require_once)\b\s*\(?\s*['"]([^'"]+)['"]/g;
-  const out = [];
-  let m;
-  while ((m = re.exec(text)) !== null) out.push(m[1]);
-  return out;
+function resolvePathStyle(target, fromPath) {
+  if (!target || /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(target)) return []; // skip URLs
+  const r = normalizeWithin(dirOf(fromPath), target.split('/'));
+  return r ? [r] : [];
 }
 
 /**
- * Resolve the includes referenced by filePath's current content, fetch each
- * referenced file, parse out its `function` definitions, and store the union
- * in includeFnCache[filePath]. Best-effort and async; failures are silent.
+ * JS/TS resolver. Only relative/absolute specifiers ('./x', '../x', '/x') map
+ * to project files; bare specifiers (packages) are skipped. Tries the literal
+ * path plus common extensions and index files.
+ */
+function resolveJsStyle(target, fromPath) {
+  if (!target || (target[0] !== '.' && target[0] !== '/')) return []; // bare = package
+  const base = normalizeWithin(dirOf(fromPath), target.split('/'));
+  if (base === null) return [];
+  const hasExt = /\.[a-z]+$/i.test(base.split('/').pop() || '');
+  if (hasExt) return [base];
+  return [base + '.js', base + '.ts', base + '.jsx', base + '.tsx',
+          base + '.mjs', base + '/index.js', base + '/index.ts'];
+}
+
+/**
+ * Python resolver. Converts a dotted module to a file path. Leading dots are
+ * relative to the current file's directory; otherwise resolved from root.
+ */
+function resolvePyStyle(target, fromPath) {
+  if (!target) return [];
+  let mod = target;
+  let baseDir = '';
+  const dotM = mod.match(/^\.+/);
+  if (dotM) {
+    // Each leading dot after the first goes one directory up.
+    const ups = dotM[0].length - 1;
+    let segs = dirOf(fromPath).split('/').filter(Boolean);
+    for (let i = 0; i < ups; i++) segs.pop();
+    baseDir = segs.join('/');
+    mod = mod.slice(dotM[0].length);
+  }
+  if (!mod) return [];
+  const parts = mod.split('.');
+  const p1 = normalizeWithin(baseDir, parts.concat([]));       // pkg/mod
+  const p2 = normalizeWithin(baseDir, parts);                  // pkg/mod (dir) -> __init__
+  const out = [];
+  if (p1) out.push(p1 + '.py');
+  if (p2) out.push(p2 + '/__init__.py');
+  return out;
+}
+
+/** Ruby require_relative resolver: relative path, append .rb if no extension. */
+function resolveRubyStyle(target, fromPath) {
+  const base = resolvePathStyle(target, fromPath);
+  return base.map((p) => (/\.[a-z]+$/i.test(p.split('/').pop() || '') ? p : p + '.rb'));
+}
+
+/**
+ * Per-language import configuration. Each entry:
+ *   importRe: /g regex; the first non-undefined capture group is the target.
+ *   resolve:  (target, fromPath) => string[] candidate root-relative paths.
+ *   defRe:    /g regex over imported source; first non-undefined group is a name.
+ * Languages absent from this table get no import suggestions (safe no-op).
+ * Go/Java/Kotlin/Swift use package/namespace imports that don't map to project
+ * files, so they are intentionally omitted (best-effort = nothing, no errors).
+ */
+const IMPORT_CONFIGS = (() => {
+  const jsCfg = {
+    importRe: /\b(?:import\b[^'"]*from\s*|import\s*|require\s*\(\s*)['"]([^'"]+)['"]/g,
+    resolve: resolveJsStyle,
+    defRe: /\b(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s+([A-Za-z_$][\w$]*)|\bexport\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/g,
+  };
+  const cCfg = {
+    importRe: /#include\s*"([^"]+)"/g,
+    resolve: resolvePathStyle,
+    // Declarations/definitions: type name(args) followed by ; or {.
+    defRe: /(?:^|\n)\s*[A-Za-z_][\w\s\*]*?\b([A-Za-z_]\w*)\s*\([^;{)]*\)\s*(?:\{|;)/g,
+  };
+  return {
+    php: {
+      importRe: /\b(?:include|include_once|require|require_once)\b\s*\(?\s*['"]([^'"]+)['"]/g,
+      resolve: resolvePathStyle,
+      defRe: /\bfunction\s+([A-Za-z_\x80-\xff][A-Za-z0-9_\x80-\xff]*)\s*\(/g,
+    },
+    js: jsCfg, ts: jsCfg, tsx: jsCfg, jsx: jsCfg,
+    py: {
+      importRe: /^\s*(?:from\s+([.\w]+)\s+import\b|import\s+([.\w]+))/gm,
+      resolve: resolvePyStyle,
+      defRe: /^\s*def\s+([A-Za-z_]\w*)\s*\(/gm,
+    },
+    c: cCfg, cpp: cCfg,
+    ruby: {
+      importRe: /\brequire_relative\s+['"]([^'"]+)['"]/g,
+      resolve: resolveRubyStyle,
+      defRe: /\bdef\s+([A-Za-z_]\w*[!?]?)/g,
+    },
+  };
+})();
+
+/** First defined capture group of a match (targets/names may be in group 1..n). */
+function firstGroup(m) {
+  for (let i = 1; i < m.length; i++) if (m[i] !== undefined) return m[i];
+  return undefined;
+}
+
+/**
+ * Resolve the imports referenced by filePath's current content, fetch each
+ * referenced file, parse out its definitions, and store the union in
+ * importFnCache[filePath]. Best-effort and async; failures are silent.
  * @param {string} filePath
  */
-async function refreshIncludeFns(filePath) {
-  if (!filePath || langFromPath(filePath) !== 'php') return;
-  const file = openFiles.get(filePath);
-  const text = file && typeof file.content === 'string' ? file.content : (activeTab === filePath && editor ? editor.getValue() : '');
-  const targets = extractIncludeTargets(text);
+async function refreshImportFns(filePath) {
+  if (!filePath) return;
+  const cfg = IMPORT_CONFIGS[langFromPath(filePath)];
+  if (!cfg) { importFnCache.delete(filePath); return; }
 
+  const file = openFiles.get(filePath);
+  const text = file && typeof file.content === 'string'
+    ? file.content
+    : (activeTab === filePath && editor ? editor.getValue() : '');
+
+  // Collect candidate paths from every import statement.
   const paths = [];
   const seen = new Set();
-  for (const t of targets) {
-    const resolved = resolveIncludePath(t, filePath);
-    if (resolved && !seen.has(resolved)) { seen.add(resolved); paths.push(resolved); }
+  cfg.importRe.lastIndex = 0;
+  let m;
+  while ((m = cfg.importRe.exec(text)) !== null) {
+    const target = firstGroup(m);
+    if (target === undefined) continue;
+    for (const p of cfg.resolve(target, filePath)) {
+      if (p && !seen.has(p)) { seen.add(p); paths.push(p); }
+    }
   }
 
   const fnNames = new Set();
-  const fnRe = /\bfunction\s+([A-Za-z_\x80-\xff][A-Za-z0-9_\x80-\xff]*)\s*\(/g;
   await Promise.all(paths.map(async (p) => {
     try {
       const res = await fetch('/api/file?path=' + encodeURIComponent(p));
       if (!res.ok) return;
       const src = await res.text();
-      let m;
-      while ((m = fnRe.exec(src)) !== null) fnNames.add(m[1]);
-      fnRe.lastIndex = 0;
+      cfg.defRe.lastIndex = 0;
+      let dm;
+      while ((dm = cfg.defRe.exec(src)) !== null) {
+        const name = firstGroup(dm);
+        if (name) fnNames.add(name);
+      }
     } catch (_) { /* best-effort */ }
   }));
 
-  includeFnCache.set(filePath, fnNames);
+  importFnCache.set(filePath, fnNames);
 }
 
 /** Debounced refresh triggered on edit. */
-function scheduleIncludeFnsRefresh(filePath) {
-  clearTimeout(_includeFnsTimer);
-  _includeFnsTimer = setTimeout(() => refreshIncludeFns(filePath), 400);
+function scheduleImportFnsRefresh(filePath) {
+  clearTimeout(_importFnsTimer);
+  _importFnsTimer = setTimeout(() => refreshImportFns(filePath), 400);
 }
 
 // ── Tree ─────────────────────────────────────────────────────────────────────
@@ -1183,8 +1294,8 @@ function activateTab(filePath) {
   const file = openFiles.get(filePath);
   showContent(filePath, file ? file.content : '');
 
-  // Refresh include'd-function suggestions for PHP files.
-  refreshIncludeFns(filePath);
+  // Refresh imported-function suggestions (best-effort, async).
+  refreshImportFns(filePath);
 
   scheduleSaveSession();
 }
@@ -1819,9 +1930,9 @@ function init() {
     return out;
   };
 
-  // PHP include/require autocomplete: expose functions defined in include'd
-  // files to the engine, even when those files are not open in a tab.
-  window.acIncludeFns = () => includeFnCache.get(activeTab) || null;
+  // Import autocomplete: expose functions defined in imported/included files
+  // to the engine, even when those files are not open in a tab.
+  window.acIncludeFns = () => importFnCache.get(activeTab) || null;
 
   // Undo/Redo buttons.
   const btnUndo = document.getElementById('btn-undo');
@@ -1857,7 +1968,7 @@ function init() {
         updateDirtyState(activeTab, text);
         scheduleSaveSession();
       }
-      scheduleIncludeFnsRefresh(activeTab);
+      scheduleImportFnsRefresh(activeTab);
     }
     refreshUndoButtons();
   };

@@ -444,12 +444,14 @@ function acCode(text, caretPos, lang) {
     } catch (e) { /* hook failure must never break typing */ }
   }
 
-  // PHP: functions defined in include/require'd files (hook set by app.js).
-  if (lang === 'php' && typeof window.acIncludeFns === 'function') {
+  // Functions defined in imported/included files (hook set by app.js). The
+  // cache is only populated for languages with an import config, so this is a
+  // safe no-op elsewhere.
+  if (typeof window.acIncludeFns === 'function') {
     try {
-      const includeFns = window.acIncludeFns();
-      if (includeFns) {
-        for (const name of includeFns) {
+      const importFns = window.acIncludeFns();
+      if (importFns) {
+        for (const name of importFns) {
           if (!counts.has(name)) counts.set(name, 0.6); // above other-tab (0.5), below in-file
           fns.add(name); // rank as functions and complete with ()
         }
