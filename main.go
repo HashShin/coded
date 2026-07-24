@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/HashShin/coded/server"
 )
@@ -173,10 +175,33 @@ func main() {
 		}
 	}
 	addr := fmt.Sprintf("127.0.0.1:%d", *portFlag)
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: could not bind port: %v\n", err)
-		os.Exit(1)
+	// When restarting via CODED_PORT the parent process exits just before we
+	// start, freeing the port. Retry for up to ~3 s to cover the handoff race.
+	var ln net.Listener
+	{
+		const maxRetries = 20
+		const retryDelay = 150 * time.Millisecond
+		var bindErr error
+		for i := 0; i < maxRetries; i++ {
+			ln, bindErr = net.Listen("tcp", addr)
+			if bindErr == nil {
+				break
+			}
+			if *portFlag == 0 {
+				// Random port: no point retrying.
+				break
+			}
+			var opErr *net.OpError
+			if errors.As(bindErr, &opErr) && opErr.Op == "listen" {
+				time.Sleep(retryDelay)
+				continue
+			}
+			break // non-recoverable error
+		}
+		if ln == nil {
+			fmt.Fprintf(os.Stderr, "error: could not bind port: %v\n", bindErr)
+			os.Exit(1)
+		}
 	}
 
 	// Print the URL only after the listener is successfully bound.
